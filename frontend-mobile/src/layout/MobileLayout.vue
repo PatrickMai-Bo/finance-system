@@ -39,6 +39,6 @@ function goProfile() { router.push('/profile') }
 </script>
 
 <style scoped>
-.layout { min-height: 100vh; }
-.content { min-height: calc(100vh - 100px); }
+.layout { min-height: 100vh; display: flex; flex-direction: column; }
+.content { flex: 1; overflow-y: auto; padding-bottom: 8px; }
 </style>

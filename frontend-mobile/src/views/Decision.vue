@@ -47,6 +47,19 @@
       </div>
 
       <div class="m-card">
+        <div class="m-title">历史决策记录</div>
+        <div v-if="logs.length === 0" style="color:#909399;font-size:12px;text-align:center;padding:12px">暂无记录，完成一次决策分析后自动记录</div>
+        <div v-for="l in logs" :key="l.id" class="log-item">
+          <div class="log-top">
+            <van-tag size="mini" :type="l.scene === 'invest' ? 'primary' : l.scene === 'family' ? 'success' : 'warning'">{{ l.scene }}</van-tag>
+            <span class="log-dec">{{ l.decision }}</span>
+          </div>
+          <div class="log-verdict">{{ l.verdict }}</div>
+          <div style="font-size:11px;color:#909399;margin-top:4px">{{ l.createdAt || l.created_at }}</div>
+        </div>
+      </div>
+
+      <div class="m-card">
         <div class="m-title">每周错误复盘模板</div>
         <ol class="review"><li v-for="(r, i) in fw.reviewTemplate" :key="i">{{ r }}</li></ol>
       </div>
@@ -116,4 +129,8 @@ onMounted(async () => {
 .mu { font-size: 12px; color: #2b6cb0; background: #f0f6ff; padding: 6px; border-radius: 8px; }
 .review { padding-left: 18px; color: #606266; font-size: 13px; line-height: 2; }
 .ai-res { margin-top: 12px; }
+.log-item { background: #fafbfc; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.log-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.log-dec { font-size: 13px; font-weight: 600; color: #303133; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-verdict { font-size: 12px; color: #e67e22; background: #fef5e7; padding: 4px 8px; border-radius: 6px; line-height: 1.6; }
 </style>
