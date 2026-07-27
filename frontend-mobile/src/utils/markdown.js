@@ -27,8 +27,8 @@ export function parseMarkdown(src) {
     const hMatch = t.match(/^(#{1,3})\s+(.*)$/)
     if (hMatch) {
       const lvl = hMatch[1].length
-      const cls = lvl === 1 ? 'md-h1' : lvl === 2 ? 'md-h2' : 'md-h3'
-      out.push(`<div class="${cls}">${inline(hMatch[2])}</div>`)
+      const tag = lvl === 1 ? 'h1' : lvl === 2 ? 'h2' : 'h3'
+      out.push(`<${tag}>${inline(hMatch[2])}</${tag}>`)
       i++; continue
     }
     if (/^[-*]\s+/.test(t)) {
@@ -50,7 +50,7 @@ export function parseMarkdown(src) {
       continue
     }
     if (/^!!!\s+/.test(t)) {
-      out.push(`<div class="md-warn">${inline(t.replace(/^!!!\s+/, ''))}</div>`)
+      out.push(`<div style="background:#fef5e7;border-left:4px solid #e6a23c;padding:8px 12px;border-radius:6px;margin:8px 0;font-size:14px;line-height:1.8">${inline(t.replace(/^!!!\s+/, ''))}</div>`)
       i++; continue
     }
     const para = [t]

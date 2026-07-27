@@ -54,6 +54,6 @@ async function run() {
 </script>
 
 <style scoped>
-.ai-page { height: 100%; background: #f5f7fa; }
-.ai-body { padding: 14px; overflow-y: auto; }
+.ai-page { height: 100%; display: flex; flex-direction: column; background: #f5f7fa; }
+.ai-body { flex: 1; overflow-y: auto; padding: 14px; }
 </style>

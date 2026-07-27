@@ -40,7 +40,7 @@
       <div class="m-card">
         <div class="m-title">思维模型库</div>
         <div v-for="m in models" :key="m.name" class="model">
-          <div class="mh"><b>{{ m.name }}</b> <van-tag size="mini" type="primary" plain>{{ m.book }}</van-tag></div>
+          <div class="mh"><b>{{ m.name }}</b></div>
           <p class="md">{{ m.desc }}</p>
           <div class="mu">💡 {{ m.usage }}</div>
         </div>
@@ -49,13 +49,12 @@
       <div class="m-card">
         <div class="m-title">历史决策记录</div>
         <div v-if="logs.length === 0" style="color:#909399;font-size:12px;text-align:center;padding:12px">暂无记录，完成一次决策分析后自动记录</div>
-        <div v-for="l in logs" :key="l.id" class="log-item">
+        <div v-for="l in logs" :key="l.title" class="log-item">
           <div class="log-top">
-            <van-tag size="mini" :type="l.scene === 'invest' ? 'primary' : l.scene === 'family' ? 'success' : 'warning'">{{ l.scene }}</van-tag>
-            <span class="log-dec">{{ l.decision }}</span>
+            <span class="log-dec">{{ l.title }}</span>
           </div>
-          <div class="log-verdict">{{ l.verdict }}</div>
-          <div style="font-size:11px;color:#909399;margin-top:4px">{{ l.createdAt || l.created_at }}</div>
+          <div class="log-verdict">{{ l.basis }} · {{ l.review }}</div>
+          <div style="font-size:11px;color:#909399;margin-top:4px">{{ l.date }} · 模型: {{ l.model }}</div>
         </div>
       </div>
 
@@ -108,6 +107,11 @@ onMounted(async () => {
   try {
     const [m, l, f] = await Promise.all([decisionApi.models(), decisionApi.logs(), decisionApi.framework()])
     models.value = m.data; logs.value = l.data; fw.value = f.data
+  } catch (e) {
+    // 部分失败也要加载能用的
+    try { const r = await decisionApi.framework(); fw.value = r.data } catch (_) {}
+    try { const r = await decisionApi.models(); models.value = r.data } catch (_) {}
+    try { const r = await decisionApi.logs(); logs.value = r.data } catch (_) {}
   } finally { loading.value = false }
 })
 </script>

@@ -40,5 +40,5 @@ function goProfile() { router.push('/profile') }
 
 <style scoped>
 .layout { min-height: 100vh; display: flex; flex-direction: column; }
-.content { flex: 1; overflow-y: auto; padding-bottom: 8px; }
+.content { flex: 1; overflow-y: auto; padding: 12px; -webkit-overflow-scrolling: touch; }
 </style>
