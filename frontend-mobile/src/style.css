@@ -1,0 +1,40 @@
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body, #app { margin: 0; padding: 0; height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #f5f7fa;
+  color: #303133;
+  font-size: 14px;
+}
+a { color: #2b6cb0; }
+
+/* 通用卡片 */
+.m-card { background: #fff; border-radius: 12px; padding: 14px; margin: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+.m-title { font-size: 16px; font-weight: 700; color: #1f2d3d; margin: 0 0 4px; }
+.m-sub { font-size: 12px; color: #909399; margin: 0 0 10px; }
+
+/* 涨跌色(中国习惯:涨红跌绿) */
+.up { color: #f56c6c; font-weight: 600; }
+.down { color: #67c23a; font-weight: 600; }
+.muted { color: #909399; }
+
+/* 简易进度条 */
+.bar { height: 8px; border-radius: 4px; background: #ebedf0; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: linear-gradient(90deg, #2b6cb0, #409eff); }
+
+/* 推荐等级标签 */
+.tag-strong { color: #f56c6c; font-weight: 700; }
+.tag-rec { color: #e6a23c; font-weight: 700; }
+.tag-watch { color: #909399; }
+.tag-avoid { color: #67c23a; }
+
+/* 移动端 Markdown 渲染 */
+.md { font-size: 14px; line-height: 1.8; color: #303133; word-break: break-word; }
+.md h1 { font-size: 18px; font-weight: 800; color: #1f3a68; margin: 14px 0 10px; padding-left: 10px; border-left: 5px solid #2b6cb0; background: linear-gradient(90deg, #f0f6ff, transparent); }
+.md h2 { font-size: 16px; font-weight: 700; color: #2b4a8b; margin: 12px 0 8px; padding-left: 10px; border-left: 4px solid #2b6cb0; background: #f5f9ff; border-radius: 0 6px 6px 0; }
+.md h3 { font-size: 14px; font-weight: 700; color: #2b4a8b; margin: 10px 0 6px; padding-left: 8px; border-left: 3px solid #409eff; }
+.md p { margin: 8px 0; }
+.md ul, .md ol { padding-left: 20px; margin: 8px 0; }
+.md li { margin: 4px 0; line-height: 1.7; }
+.md strong { color: #c0392b; font-weight: 700; background: #fff7e6; padding: 1px 5px; border-radius: 3px; border: 1px solid #ffe7ba; }
+.md hr { border: none; border-top: 1px dashed #dcdfe6; margin: 14px 0; }
