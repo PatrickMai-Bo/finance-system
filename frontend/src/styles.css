@@ -1,0 +1,29 @@
+:root {
+  --up-color: #e53935;   /* 涨=红 (A股习惯) */
+  --down-color: #43a047; /* 跌=绿 */
+  --brand: #2b6cb0;
+}
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", -apple-system, system-ui, sans-serif;
+  background: #f5f7fa;
+  color: #1f2d3d;
+}
+.up { color: var(--up-color); font-weight: 600; }
+.down { color: var(--down-color); font-weight: 600; }
+.page { padding: 20px; }
+.page-title { font-size: 20px; font-weight: 700; margin: 0 0 4px; }
+.page-sub { color: #909399; font-size: 13px; margin: 0 0 18px; }
+.stat-card { border-radius: 12px; }
+.book-tag { font-size: 12px; }
+.section-card { border-radius: 12px; margin-bottom: 18px; }
+.rating-strong { color: #fff; background: #e53935; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+.rating-rec { color: #fff; background: #fb8c00; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+.rating-watch { color: #fff; background: #757575; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+.rating-avoid { color: #fff; background: #43a047; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+.moat-tag { margin: 0 4px 4px 0; }
+.reason-text { color: #606266; font-size: 12px; line-height: 1.5; }
+@media (max-width: 768px) {
+  .page { padding: 12px; }
+}
