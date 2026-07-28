@@ -23,6 +23,7 @@ services:
       DB_URL: jdbc:mysql://mysql:3306/finance_system?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
       DB_USERNAME: root
       DB_PASSWORD: root
+      COLLECTOR_URL: http://finance-collector:8091
     restart: always
 
   collector:
