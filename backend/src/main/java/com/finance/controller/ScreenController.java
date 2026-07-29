@@ -3,6 +3,7 @@ package com.finance.controller;
 import com.finance.common.PageResult;
 import com.finance.common.R;
 import com.finance.service.AdviceService;
+import com.finance.service.DeepAnalysisService;
 import com.finance.service.MockDataService;
 import com.finance.service.RealScreenService;
 import org.springframework.web.bind.annotation.*;
@@ -21,11 +22,13 @@ public class ScreenController {
     private final MockDataService mock;
     private final RealScreenService real;
     private final AdviceService advice;
+    private final DeepAnalysisService deep;
 
-    public ScreenController(MockDataService mock, RealScreenService real, AdviceService advice) {
+    public ScreenController(MockDataService mock, RealScreenService real, AdviceService advice, DeepAnalysisService deep) {
         this.mock = mock;
         this.real = real;
         this.advice = advice;
+        this.deep = deep;
     }
 
     /** 股票筛选结果:分页 page(1..),size 默认10 */
@@ -148,6 +151,26 @@ public class ScreenController {
     @GetMapping("/fund/categories")
     public R<List<String>> categories() {
         return R.ok(Arrays.asList("全部", "股票型", "混合型", "债券型", "指数基金", "QDII"));
+    }
+
+    /**
+     * 第二阶段深度分析：对已通过第一阶段定量筛选的标的，调用 DeepSeek 按7段模板做深度分析。
+     * 缓存 60 分钟。invalidate=true 强制刷新。
+     */
+    @PostMapping("/stock/analyze/{code}")
+    public R<Map<String, Object>> analyzeStock(
+            @PathVariable String code,
+            @RequestParam(defaultValue = "false") boolean invalidate) {
+        if (invalidate) deep.invalidate("stock", code);
+        return R.ok(deep.analyzeStock(code));
+    }
+
+    @PostMapping("/fund/analyze/{code}")
+    public R<Map<String, Object>> analyzeFund(
+            @PathVariable String code,
+            @RequestParam(defaultValue = "false") boolean invalidate) {
+        if (invalidate) deep.invalidate("fund", code);
+        return R.ok(deep.analyzeFund(code));
     }
 
     private List<Map<String, Object>> markMock(List<Map<String, Object>> list) {

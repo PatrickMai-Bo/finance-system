@@ -75,11 +75,15 @@
             <div class="score">评分 {{ row.score }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240">
+        <el-table-column label="操作" width="280">
           <template #default="{ row }">
             <div class="reason-text">{{ row.reason }}</div>
-            <div style="margin-top:6px">
+            <div class="ops-row">
               <AiAnalyze scene="stock" :payload="row" />
+              <el-link type="warning" :underline="false" @click="openDeep(row)" class="deep-link">
+                <el-icon><View /></el-icon> 详细分析
+              </el-link>
+              <el-tag v-if="deepMap[row.code]?.mode==='real'" type="success" size="small" effect="plain">已分析</el-tag>
             </div>
           </template>
         </el-table-column>
@@ -122,6 +126,29 @@
         </template>
       </el-dialog>
 
+      <!-- 深度分析弹框 -->
+      <el-dialog v-model="deepVisible" :title="'深度分析 · ' + deepTarget?.name + ' (' + deepTarget?.code + ')'" width="80%" append-to-body>
+        <div v-if="deepTarget" style="margin-bottom:10px">
+          <el-tag v-for="t in deepTarget.moatTags" :key="t" size="small" type="warning" effect="plain" style="margin-right:4px">{{ t }}</el-tag>
+          <el-tag :type="deepTarget.dataSource==='real'?'success':'info'" size="small">{{ deepTarget.dataSource==='real'?'真实数据':'演示数据' }}</el-tag>
+          <el-tag v-if="deepMap[deepTarget.code]?.mode==='real'" size="small" type="success" style="margin-left:4px">
+            {{ deepMap[deepTarget.code]?.model || 'AI 分析' }}
+          </el-tag>
+        </div>
+        <div v-loading="deepLoading" style="min-height:300px">
+          <div v-if="deepMap[deepTarget?.code]" class="deep-result">
+            <MarkdownView v-if="deepMap[deepTarget.code].analysis" :source="deepMap[deepTarget.code].analysis" />
+            <el-empty v-else description="分析结果为空" :image-size="80" />
+          </div>
+          <el-empty v-else description="点击下方按钮开始AI深度分析" :image-size="80" />
+        </div>
+        <template #footer>
+          <el-button @click="deepVisible = false">关闭</el-button>
+          <el-button type="warning" :loading="deepLoading" @click="runDeep(false)">开始分析</el-button>
+          <el-button type="primary" :loading="deepLoading" @click="runDeep(true)">强制刷新</el-button>
+        </template>
+      </el-dialog>
+
       <div class="pager">
         <el-pagination
           background
@@ -137,7 +164,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, View } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AiAnalyze from '../components/AiAnalyze.vue'
 import FcfSpark from '../components/FcfSpark.vue'
@@ -160,6 +187,28 @@ const selectedRows = ref([])
 const batchVisible = ref(false)
 const batchLoading = ref(false)
 const batchResult = ref(null)
+
+// 深度分析
+const deepVisible = ref(false)
+const deepLoading = ref(false)
+const deepTarget = ref(null)
+const deepMap = ref({})
+
+function openDeep(row) {
+  deepTarget.value = row
+  deepVisible.value = true
+}
+async function runDeep(invalidate) {
+  if (!deepTarget.value) return
+  deepLoading.value = true
+  try {
+    const code = deepTarget.value.code
+    const res = await screenApi.analyzeStock(code, invalidate)
+    deepMap.value[code] = res.data
+  } catch (e) {
+    ElMessage.error('分析失败: ' + (e?.message || e))
+  } finally { deepLoading.value = false }
+}
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 const dataSource = computed(() => (list.value.length ? list.value[0].dataSource : ''))
@@ -265,4 +314,7 @@ onMounted(load)
 .batch-name { font-size: 12px; color: #2b6cb0; background: #f0f6ff; padding: 2px 10px; border-radius: 10px; }
 .batch-mode { margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
 .batch-model { font-size: 12px; color: #606266; }
+.ops-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.deep-link { font-size: 12px; cursor: pointer; }
+.deep-result { max-height: 70vh; overflow-y: auto; }
 </style>

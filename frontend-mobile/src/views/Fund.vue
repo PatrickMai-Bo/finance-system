@@ -48,7 +48,29 @@
         <div class="adv-row"><span class="at long">长期</span> {{ adviceMap[f.code].long?.horizon }} · 预计 <b :class="retClass(adviceMap[f.code].long?.returnRange)">{{ adviceMap[f.code].long?.returnRange }}</b></div>
       </div>
       <AiDialog scene="fund" :payload="f" label="AI 分析" />
+      <van-button size="small" type="warning" plain block style="margin-top:6px;font-size:11px" :loading="deepLoadingMap[f.code]" @click="openDeep(f)">
+        详细分析（7段深度评估）
+      </van-button>
     </div>
+
+    <!-- 深度分析弹框 -->
+    <van-popup v-model:show="deepVisible" position="right" :style="{ width: '100%', height: '100%' }">
+      <div class="deep-page">
+        <van-nav-bar title="AI 深度分析" left-text="返回" left-arrow @click-left="deepVisible = false" />
+        <div class="deep-body">
+          <div v-if="deepName" style="margin-bottom:8px">
+            <b>{{ deepName }}</b> <span class="code">{{ deepCode }}</span>
+          </div>
+          <van-loading v-if="deepLoading" style="margin-top:20px;display:block;text-align:center" />
+          <MobileMarkdown v-else-if="deepResult" :source="deepResult" />
+          <van-empty v-else description="点击下方按钮开始 AI 深度分析" :image-size="60" style="margin-top:20px" />
+        </div>
+        <div class="deep-foot">
+          <van-button type="warning" size="small" :loading="deepLoading" @click="runDeep(false)">开始分析</van-button>
+          <van-button type="primary" size="small" :loading="deepLoading" @click="runDeep(true)">强制刷新</van-button>
+        </div>
+      </div>
+    </van-popup>
 
     <div class="pager">
       <van-button size="small" :disabled="page <= 1" @click="onPage(page - 1)">上一页</van-button>
@@ -63,6 +85,7 @@ import { ref, computed, onMounted } from 'vue'
 import { screenApi } from '../api'
 import Sparkline from '../components/Sparkline.vue'
 import AiDialog from '../components/AiDialog.vue'
+import MobileMarkdown from '../components/MobileMarkdown.vue'
 
 const loading = ref(false)
 const running = ref(false)
@@ -76,6 +99,39 @@ const updatedAt = ref('')
 const adviceMap = ref({})
 const dataSource = ref('')
 const categories = ref(['全部'])
+
+// 深度分析
+const deepVisible = ref(false)
+const deepLoading = ref(false)
+const deepName = ref('')
+const deepCode = ref('')
+const deepResult = ref('')
+const deepMode = ref('')
+const deepModel = ref('')
+const deepLoadingMap = ref({})
+
+function openDeep(f) {
+  deepName.value = f.name; deepCode.value = f.code
+  deepResult.value = ''; deepMode.value = ''
+  deepModel.value = ''
+  deepVisible.value = true
+}
+async function runDeep(invalidate) {
+  if (!deepCode.value) return
+  deepLoading.value = true
+  deepLoadingMap.value[deepCode.value] = true
+  try {
+    const res = await screenApi.analyzeFund(deepCode.value, invalidate)
+    deepResult.value = res.data.analysis || ''
+    deepMode.value = res.data.mode || ''
+    deepModel.value = res.data.model || ''
+  } catch (e) {
+    deepResult.value = '⚠️ 分析失败: ' + (e?.message || e)
+  } finally {
+    deepLoading.value = false
+    deepLoadingMap.value[deepCode.value] = false
+  }
+}
 const catIndex = ref(0)
 const category = computed(() => categories.value[catIndex.value] || '全部')
 
@@ -144,4 +200,7 @@ onMounted(() => { loadCats(); load() })
 .at { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 11px; color: #fff; }
 .at.short { background: #67c23a; } .at.mid { background: #409eff; } .at.long { background: #909399; }
 .pager { display: flex; justify-content: center; align-items: center; gap: 16px; margin: 12px 0; }
+.deep-page { height: 100%; display: flex; flex-direction: column; background: #f5f7fa; }
+.deep-body { flex: 1; overflow-y: auto; padding: 14px; }
+.deep-foot { padding: 10px 14px; display: flex; gap: 10px; justify-content: center; border-top: 1px solid #ebeef5; background: #fff; }
 </style>
