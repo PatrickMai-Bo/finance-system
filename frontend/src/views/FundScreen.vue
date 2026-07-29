@@ -9,10 +9,7 @@
         <el-button type="success" :disabled="!selectedRows.length" :loading="batchLoading" @click="runBatch">
           批量深度对比({{ selectedRows.length }})
         </el-button>
-        <el-button type="warning" :icon="RefreshRight" :loading="refining" @click="runRefine">
-          精排分析(5规则+LLM)
-        </el-button>
-        <el-button type="primary" :icon="Refresh" :loading="running" @click="run">刷新行情</el-button>
+        <el-button type="primary" :icon="Refresh" :loading="refining" @click="runRefine">刷新行情+精排</el-button>
       </div>
     </div>
 
@@ -160,7 +157,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Refresh, View, RefreshRight } from '@element-plus/icons-vue'
+import { Refresh, View } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AiAnalyze from '../components/AiAnalyze.vue'
 import WatchlistPanel from '../components/WatchlistPanel.vue'
@@ -225,15 +222,14 @@ function refinedTagType(r) {
 
 async function runRefine() {
   refining.value = true
-  refinedReady.value = false
   try {
+    await screenApi.runFund()
     const res = await screenApi.refinedFund(category.value, page.value, pageSize, true)
-    list.value = res.data.list
-    total.value = res.data.total
+    list.value = res.data.list; total.value = res.data.total
     refinedReady.value = true
-    ElMessage.success('精排分析完成！已按5条优化规则+LLM重新评分排序')
+    ElMessage.success('行情+精排分析完成')
   } catch (e) {
-    ElMessage.error('精排分析失败: ' + (e?.message || e))
+    ElMessage.error('刷新失败: ' + (e?.message || e))
   } finally { refining.value = false }
 }
 
@@ -250,6 +246,7 @@ async function load() {
     const res = await screenApi.fund(category.value, page.value, pageSize)
     list.value = res.data.list
     total.value = res.data.total
+    if (list.value.length && list.value[0].deepAnalysis) refinedReady.value = true
   } finally { loading.value = false }
   loadAdvice(false)
 }

@@ -9,10 +9,7 @@
         <el-button type="success" :disabled="!selectedRows.length" :loading="batchLoading" @click="runBatch">
           批量深度对比({{ selectedRows.length }})
         </el-button>
-        <el-button type="warning" :icon="RefreshRight" :loading="refining" @click="runRefine">
-          精排分析(5规则+LLM重评分)
-        </el-button>
-        <el-button type="primary" :icon="Refresh" :loading="running" @click="run">刷新行情</el-button>
+        <el-button type="primary" :icon="Refresh" :loading="refining" @click="runRefine">刷新行情+精排</el-button>
       </div>
     </div>
 
@@ -157,7 +154,7 @@
         </div>
         <template #footer>
           <el-button @click="deepVisible = false">关闭</el-button>
-          <el-button type="warning" :loading="deepLoading" @click="runDeep(false)">强制刷新(重新调用LLM)</el-button>
+          <el-button type="warning" :loading="deepLoading" @click="runDeep">强制刷新(重新调用LLM)</el-button>
         </template>
       </el-dialog>
 
@@ -176,7 +173,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Refresh, View, RefreshRight } from '@element-plus/icons-vue'
+import { Refresh, View } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AiAnalyze from '../components/AiAnalyze.vue'
 import FcfSpark from '../components/FcfSpark.vue'
@@ -248,15 +245,14 @@ function refinedTagType(r) {
 
 async function runRefine() {
   refining.value = true
-  refinedReady.value = false
   try {
+    await screenApi.runStock() // 先刷新定量数据
     const res = await screenApi.refinedStock(page.value, pageSize, true)
-    list.value = res.data.list
-    total.value = res.data.total
+    list.value = res.data.list; total.value = res.data.total
     refinedReady.value = true
-    ElMessage.success('精排分析完成！已按5条优化规则+LLM重新评分排序')
+    ElMessage.success('行情+精排分析完成')
   } catch (e) {
-    ElMessage.error('精排分析失败: ' + (e?.message || e))
+    ElMessage.error('刷新失败: ' + (e?.message || e))
   } finally { refining.value = false }
 }
 
@@ -273,6 +269,8 @@ async function load() {
     const res = await screenApi.stock(page.value, pageSize)
     list.value = res.data.list
     total.value = res.data.total
+    // 首次加载自动附带 deepAnalysis，标记已就绪
+    if (list.value.length && list.value[0].deepAnalysis) refinedReady.value = true
   } finally { loading.value = false }
   loadAdvice(false)
 }

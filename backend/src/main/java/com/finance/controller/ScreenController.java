@@ -31,21 +31,21 @@ public class ScreenController {
         this.deep = deep;
     }
 
-    /** 股票筛选结果:分页 page(1..),size 默认10 */
+    /** 股票筛选结果：自动深度分析+精排排序，缓存60分钟。首次加载稍慢（约60s），之后秒出。 */
     @GetMapping("/stock")
     public R<PageResult<Map<String, Object>>> stock(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size) {
         List<Map<String, Object>> list;
         try {
-            list = real.stockList();
+            list = deep.refinedStockList(false); // 自动精排+缓存
         } catch (Exception e) {
-            list = markMock(mock.stockList());
+            try { list = real.stockList(); } catch (Exception e2) { list = markMock(mock.stockList()); }
         }
         return R.ok(paginate(list, page, size));
     }
 
-    /** 基金筛选结果:可按 category 分类(全部/股票型/混合型/债券型/指数基金/QDII) */
+    /** 基金筛选结果：自动深度分析+精排排序，缓存60分钟。 */
     @GetMapping("/fund")
     public R<PageResult<Map<String, Object>>> fund(
             @RequestParam(defaultValue = "全部") String category,
@@ -53,9 +53,9 @@ public class ScreenController {
             @RequestParam(defaultValue = "10") int size) {
         List<Map<String, Object>> list;
         try {
-            list = real.fundList(category);
+            list = deep.refinedFundList(category, false);
         } catch (Exception e) {
-            list = markMock(mock.fundList(category));
+            try { list = real.fundList(category); } catch (Exception e2) { list = markMock(mock.fundList(category)); }
         }
         return R.ok(paginate(list, page, size));
     }

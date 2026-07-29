@@ -2,8 +2,7 @@
   <div class="page">
     <div class="head">
       <div class="m-title">基金筛选</div>
-      <van-button size="small" type="warning" :loading="refining" @click="runRefine">精排</van-button>
-      <van-button size="small" type="primary" :loading="running" @click="run">刷新</van-button>
+      <van-button size="small" type="primary" :loading="refining" @click="runRefine">刷新+精排</van-button>
     </div>
 
     <van-tabs v-model:active="catIndex" @change="onCategory" line-width="20">
@@ -155,6 +154,7 @@ async function load() {
     list.value = res.data.list
     total.value = res.data.total
     dataSource.value = list.value.length ? list.value[0].dataSource : ''
+    if (list.value.length && list.value[0].deepAnalysis) refinedReady.value = true
   } finally { loading.value = false }
   loadAdvice(false)
 }
@@ -185,13 +185,14 @@ async function loadCats() {
 }
 
 async function runRefine() {
-  refining.value = true; refinedReady.value = false
+  refining.value = true
   try {
+    await screenApi.runFund()
     const res = await screenApi.refinedFund(category.value, page.value, pageSize, true)
     list.value = res.data.list; total.value = res.data.total
     refinedReady.value = true
-    showSuccessToast('精排完成')
-  } catch (e) { showToast('精排失败:' + (e?.message || e)) }
+    showSuccessToast('刷新+精排完成')
+  } catch (e) { showToast('失败:' + (e?.message || e)) }
   finally { refining.value = false }
 }
 

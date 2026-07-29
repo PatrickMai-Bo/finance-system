@@ -3,8 +3,7 @@
     <div class="head">
       <div class="m-title">股票筛选</div>
       <div class="head-ops">
-        <van-button size="small" type="warning" :loading="refining" @click="runRefine">精排</van-button>
-        <van-button size="small" type="primary" :loading="running" @click="run">刷新</van-button>
+        <van-button size="small" type="primary" :loading="refining" @click="runRefine">刷新+精排</van-button>
         <van-button size="small" type="success" @click="showWatch = true">自选</van-button>
       </div>
     </div>
@@ -199,6 +198,7 @@ async function load() {
     list.value = res.data.list
     total.value = res.data.total
     dataSource.value = list.value.length ? list.value[0].dataSource : ''
+    if (list.value.length && list.value[0].deepAnalysis) refinedReady.value = true
   } finally { loading.value = false }
   loadAdvice(false)
 }
@@ -244,13 +244,14 @@ async function saveWl() {
 async function delWl(id) { await showConfirmDialog({ title: '提示', message: '确认删除?' }); await watchlistApi.remove(id); showSuccessToast('已删除'); await loadWatch() }
 
 async function runRefine() {
-  refining.value = true; refinedReady.value = false
+  refining.value = true
   try {
+    await screenApi.runStock()
     const res = await screenApi.refinedStock(page.value, pageSize, true)
     list.value = res.data.list; total.value = res.data.total
     refinedReady.value = true
-    showSuccessToast('精排完成')
-  } catch (e) { showToast('精排失败:' + (e?.message || e)) }
+    showSuccessToast('刷新+精排完成')
+  } catch (e) { showToast('失败:' + (e?.message || e)) }
   finally { refining.value = false }
 }
 
