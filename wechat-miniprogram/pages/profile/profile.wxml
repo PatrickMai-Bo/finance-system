@@ -1,0 +1,80 @@
+<view class="container">
+  <view class="user-card">
+    <view class="user-avatar">
+      <image class="avatar" src="{{userInfo.avatar || '/images/default-avatar.png'}}"></image>
+    </view>
+    <view class="user-info">
+      <text class="nickname">{{userInfo.nickname || '未登录'}}</text>
+      <text class="username">{{userInfo.username ? '@' + userInfo.username : ''}}</text>
+    </view>
+    <button class="login-btn" wx:if="{{!userInfo.username}}" bindtap="login">登录</button>
+  </view>
+
+  <view class="menu-section">
+    <view class="menu-title">功能模块</view>
+    <view class="menu-list">
+      <view class="menu-item" bindtap="navigateTo" data-url="/pages/decision/decision">
+        <text class="menu-icon">🧠</text>
+        <text class="menu-text">决策思维</text>
+        <text class="menu-arrow">></text>
+      </view>
+      <view class="menu-item" bindtap="navigateTo" data-url="/pages/settings/ai">
+        <text class="menu-icon">🤖</text>
+        <text class="menu-text">AI分析</text>
+        <text class="menu-arrow">></text>
+      </view>
+      <view class="menu-item" bindtap="navigateTo" data-url="/pages/settings/llm">
+        <text class="menu-icon">⚙️</text>
+        <text class="menu-text">AI模型配置</text>
+        <text class="menu-arrow">></text>
+      </view>
+      <view class="menu-item" bindtap="navigateTo" data-url="/pages/finance/watchlist">
+        <text class="menu-icon">⭐</text>
+        <text class="menu-text">自选清单</text>
+        <text class="menu-arrow">></text>
+      </view>
+    </view>
+  </view>
+
+  <view class="menu-section">
+    <view class="menu-title">账户设置</view>
+    <view class="menu-list">
+      <view class="menu-item" bindtap="navigateTo" data-url="/pages/settings/llm">
+        <text class="menu-icon">🔑</text>
+        <text class="menu-text">安全设置</text>
+        <text class="menu-arrow">></text>
+      </view>
+    </view>
+  </view>
+
+  <view class="menu-section">
+    <view class="menu-title">系统信息</view>
+    <view class="menu-list">
+      <view class="menu-item">
+        <text class="menu-icon">📱</text>
+        <text class="menu-text">版本号</text>
+        <text class="menu-value">v1.0.0</text>
+      </view>
+      <view class="menu-item">
+        <text class="menu-icon">📡</text>
+        <text class="menu-text">数据来源</text>
+        <text class="menu-value">{{isMock ? '模拟数据' : '真实数据'}}</text>
+      </view>
+      <view class="menu-item">
+        <text class="menu-icon">🕐</text>
+        <text class="menu-text">最后更新</text>
+        <text class="menu-value">{{lastUpdate}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="action-section">
+    <button class="logout-btn" wx:if="{{userInfo.username}}" bindtap="logout">退出登录</button>
+    <button class="clear-btn" bindtap="clearCache">清除缓存</button>
+  </view>
+
+  <view class="footer">
+    <text class="footer-text">理财投资决策系统 v1.0.0</text>
+    <text class="footer-text">MIT License</text>
+  </view>
+</view>

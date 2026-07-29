@@ -1,0 +1,112 @@
+<view class="container">
+  <view class="page-header">
+    <view>
+      <text class="page-title">自选清单</text>
+      <text class="page-subtitle">股票/基金自选管理</text>
+    </view>
+    <button class="add-btn" size="mini" bindtap="showAddModal">添加</button>
+  </view>
+
+  <view class="type-tabs">
+    <view class="tab {{currentType === 'stock' ? 'active' : ''}}" bindtap="switchType" data-type="stock">股票自选</view>
+    <view class="tab {{currentType === 'fund' ? 'active' : ''}}" bindtap="switchType" data-type="fund">基金自选</view>
+  </view>
+
+  <view class="summary-card" wx:if="{{summary}}">
+    <view class="summary-row">
+      <view class="summary-item">
+        <text class="summary-label">总成本</text>
+        <text class="summary-value">¥{{formatNumber(summary.totalCost)}}</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-label">总市值</text>
+        <text class="summary-value">¥{{formatNumber(summary.totalValue)}}</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-label">盈亏</text>
+        <text class="summary-value {{summary.totalGainLoss >= 0 ? 'income' : 'expense'}}">
+          {{summary.totalGainLoss >= 0 ? '+' : ''}}¥{{formatNumber(summary.totalGainLoss)}}
+        </text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-label">收益率</text>
+        <text class="summary-value {{summary.gainLossPercent >= 0 ? 'income' : 'expense'}}">
+          {{summary.gainLossPercent >= 0 ? '+' : ''}}{{summary.gainLossPercent}}%
+        </text>
+      </view>
+    </view>
+  </view>
+
+  <scroll-view class="watchlist" scroll-y>
+    <view class="watchlist-item" wx:for="{{watchlist}}" wx:key="id">
+      <view class="item-header">
+        <text class="item-name">{{item.name}}</text>
+        <text class="item-code">{{item.code}}</text>
+      </view>
+      <view class="item-details">
+        <view class="detail-row">
+          <text class="detail-label">成本价</text>
+          <text class="detail-value">¥{{item.cost}}</text>
+        </view>
+        <view class="detail-row">
+          <text class="detail-label">现价</text>
+          <text class="detail-value">¥{{item.currentPrice}}</text>
+        </view>
+        <view class="detail-row">
+          <text class="detail-label">持有量</text>
+          <text class="detail-value">{{item.amount}}</text>
+        </view>
+        <view class="detail-row">
+          <text class="detail-label">目标价</text>
+          <text class="detail-value">¥{{item.targetPrice}}</text>
+        </view>
+      </view>
+      <view class="item-note" wx:if="{{item.note}}">{{item.note}}</view>
+    </view>
+    <view class="empty" wx:if="{{watchlist.length === 0}}">
+      <text>暂无自选记录</text>
+    </view>
+  </scroll-view>
+
+  <view class="modal" wx:if="{{showModal}}">
+    <view class="modal-content">
+      <view class="modal-header">
+        <text class="modal-title">添加自选</text>
+        <text class="modal-close" bindtap="hideAddModal">×</text>
+      </view>
+      <view class="modal-body">
+        <picker range="{{['stock', 'fund']}}" value="{{newTypeIndex}}" bindchange="onTypeChange">
+          <view class="form-item">
+            <text class="form-label">类型</text>
+            <text class="form-value">{{newTypeIndex === 0 ? '股票' : '基金'}}</text>
+            <text class="form-arrow">▼</text>
+          </view>
+        </picker>
+        <view class="form-item">
+          <text class="form-label">名称</text>
+          <input placeholder="输入名称" value="{{newRecord.name}}" bindinput="onNameInput"/>
+        </view>
+        <view class="form-item">
+          <text class="form-label">代码</text>
+          <input placeholder="输入代码" value="{{newRecord.code}}" bindinput="onCodeInput"/>
+        </view>
+        <view class="form-item">
+          <text class="form-label">成本价</text>
+          <input type="digit" placeholder="输入成本价" value="{{newRecord.cost}}" bindinput="onCostInput"/>
+        </view>
+        <view class="form-item">
+          <text class="form-label">持有量</text>
+          <input type="digit" placeholder="输入持有量" value="{{newRecord.amount}}" bindinput="onAmountInput"/>
+        </view>
+        <view class="form-item">
+          <text class="form-label">目标价</text>
+          <input type="digit" placeholder="输入目标价" value="{{newRecord.targetPrice}}" bindinput="onTargetPriceInput"/>
+        </view>
+      </view>
+      <view class="modal-footer">
+        <button class="modal-btn cancel" bindtap="hideAddModal">取消</button>
+        <button class="modal-btn submit" bindtap="submitRecord">确定</button>
+      </view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,91 @@
+<view class="container">
+  <!-- 头部用户信息 -->
+  <view class="header">
+    <view class="user-info">
+      <image class="avatar" src="{{userInfo.avatar || '/images/default-avatar.png'}}"></image>
+      <text class="nickname">{{userInfo.nickname || '请登录'}}</text>
+    </view>
+    <view class="date">{{currentDate}}</view>
+  </view>
+
+  <!-- 财务概览卡片 -->
+  <view class="finance-card">
+    <view class="card-title">财务概览</view>
+    <view class="finance-items">
+      <view class="finance-item">
+        <text class="label">净资产</text>
+        <text class="value">¥{{formatNumber(homeData.netWorth)}}</text>
+      </view>
+      <view class="finance-item">
+        <text class="label">被动收入</text>
+        <text class="value">¥{{formatNumber(homeData.passiveIncome)}}/月</text>
+      </view>
+      <view class="finance-item">
+        <text class="label">财务自由度</text>
+        <text class="value">{{homeData.freedomCoverage}}%</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 基金TOP3 -->
+  <view class="section-card">
+    <view class="section-header">
+      <text class="section-title">基金TOP3</text>
+      <navigator class="more" url="/pages/fund/fund">更多 ></navigator>
+    </view>
+    <view class="fund-list">
+      <view class="fund-item" wx:for="{{homeData.topFunds}}" wx:key="code">
+        <view class="fund-name">{{item.name}}</view>
+        <view class="fund-yield {{item.yield.includes('-') ? 'down' : 'up'}}">
+          {{item.yield}}
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 股票TOP3 -->
+  <view class="section-card">
+    <view class="section-header">
+      <text class="section-title">股票TOP3</text>
+      <navigator class="more" url="/pages/stock/stock">更多 ></navigator>
+    </view>
+    <view class="stock-list">
+      <view class="stock-item" wx:for="{{homeData.topStocks}}" wx:key="code">
+        <view class="stock-info">
+          <text class="stock-name">{{item.name}}</text>
+          <text class="stock-code">{{item.code}}</text>
+        </view>
+        <view class="stock-price">
+          <text class="price">¥{{item.price}}</text>
+          <text class="change {{item.change >= 0 ? 'up' : 'down'}}">
+            {{item.change >= 0 ? '+' : ''}}{{item.change}}%
+          </text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 市场提示 -->
+  <view class="market-note" wx:if="{{homeData.marketNote}}">
+    <text class="note-text">{{homeData.marketNote}}</text>
+  </view>
+
+  <!-- 决策思维板块 -->
+  <view class="section-card">
+    <view class="section-header">
+      <text class="section-title">决策思维</text>
+      <navigator class="more" url="/pages/decision/decision">更多 ></navigator>
+    </view>
+    <view class="decision-list">
+      <view class="decision-item" wx:for="{{decisionModels}}" wx:key="id">
+        <text class="decision-name">{{item.name}}</text>
+        <text class="decision-desc">{{item.description}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 加载状态 -->
+  <view class="loading" wx:if="{{loading}}">
+    <text>加载中...</text>
+  </view>
+</view>

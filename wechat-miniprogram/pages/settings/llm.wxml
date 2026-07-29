@@ -1,0 +1,63 @@
+<view class="container">
+  <view class="page-header">
+    <text class="page-title">AI 模型配置</text>
+    <text class="page-subtitle">管理 DeepSeek/百炼/Kimi/智谱</text>
+  </view>
+
+  <view class="config-list">
+    <view class="config-item {{item.isActive ? 'active' : ''}}" wx:for="{{configs}}" wx:key="id">
+      <view class="config-info">
+        <view class="config-name-row">
+          <text class="config-name">{{item.name}}</text>
+          <text class="config-active" wx:if="{{item.isActive}}">已激活</text>
+        </view>
+        <text class="config-model">模型: {{item.model}}</text>
+        <text class="config-url">{{item.baseUrl}}</text>
+      </view>
+      <view class="config-actions">
+        <button class="action-btn activate-btn" size="mini" wx:if="{{!item.isActive}}" bindtap="activateConfig" data-id="{{item.id}}">激活</button>
+        <button class="action-btn test-btn" size="mini" bindtap="testConfig" data-id="{{item.id}}" loading="{{testingId === item.id}}">测试</button>
+        <button class="action-btn delete-btn" size="mini" bindtap="deleteConfig" data-id="{{item.id}}">删除</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="add-section">
+    <button class="add-btn" bindtap="showAddModal">添加新模型</button>
+  </view>
+
+  <view class="modal" wx:if="{{showModal}}">
+    <view class="modal-content">
+      <view class="modal-header">
+        <text class="modal-title">添加模型配置</text>
+        <text class="modal-close" bindtap="hideAddModal">×</text>
+      </view>
+      <view class="modal-body">
+        <view class="form-item">
+          <text class="form-label">名称</text>
+          <input placeholder="如: DeepSeek" value="{{newConfig.name}}" bindinput="onNameInput"/>
+        </view>
+        <view class="form-item">
+          <text class="form-label">Base URL</text>
+          <input placeholder="https://api.example.com/v1" value="{{newConfig.baseUrl}}" bindinput="onBaseUrlInput"/>
+        </view>
+        <view class="form-item">
+          <text class="form-label">模型</text>
+          <input placeholder="如: deepseek-chat" value="{{newConfig.model}}" bindinput="onModelInput"/>
+        </view>
+        <view class="form-item">
+          <text class="form-label">API Key</text>
+          <input placeholder="sk-xxx" value="{{newConfig.apiKey}}" bindinput="onApiKeyInput"/>
+        </view>
+        <view class="form-item">
+          <text class="form-label">搜索</text>
+          <switch checked="{{newConfig.enableSearch}}" bindchange="onSearchChange"/>
+        </view>
+      </view>
+      <view class="modal-footer">
+        <button class="modal-btn cancel" bindtap="hideAddModal">取消</button>
+        <button class="modal-btn submit" bindtap="submitConfig">确定</button>
+      </view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,66 @@
+<view class="container">
+  <view class="page-header">
+    <text class="page-title">决策思维</text>
+    <text class="page-subtitle">五阶避错框架</text>
+  </view>
+
+  <view class="input-section">
+    <textarea class="question-input" placeholder="输入你的决策问题，如：是否应该买入某股票？" value="{{question}}" bindinput="onQuestionInput"/>
+    <picker range="{{scenes}}" value="{{sceneIndex}}" bindchange="onSceneChange">
+      <view class="scene-picker">
+        <text>场景：{{scenes[sceneIndex]}}</text>
+        <text class="arrow">▼</text>
+      </view>
+    </picker>
+    <button class="analyze-btn" bindtap="analyze" loading="{{analyzing}}">开始分析</button>
+  </view>
+
+  <view class="framework-section" wx:if="{{framework}}">
+    <view class="section-title">五阶框架</view>
+    <view class="step-card" wx:for="{{framework.steps}}" wx:key="step">
+      <view class="step-header">
+        <text class="step-num">第{{item.step}}阶</text>
+        <text class="step-title">{{item.title}}</text>
+      </view>
+      <text class="step-desc">{{item.description}}</text>
+      <view class="checklist">
+        <view class="check-item" wx:for="{{item.checklist}}" wx:for-item="check" wx:key="*this">
+          <text class="check-box">☐</text>
+          <text class="check-text">{{check}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="analysis-result" wx:if="{{result}}">
+    <view class="section-title">分析结果</view>
+    <view class="result-card" wx:for="{{result.steps}}" wx:key="step">
+      <view class="result-step">
+        <text class="result-step-num">第{{item.step}}阶</text>
+        <text class="result-analysis">{{item.analysis}}</text>
+        <text class="result-recommendation">建议：{{item.recommendation}}</text>
+      </view>
+    </view>
+    <view class="final-verdict">
+      <text class="verdict-label">最终结论</text>
+      <text class="verdict-text">{{result.finalVerdict}}</text>
+    </view>
+  </view>
+
+  <view class="logs-section">
+    <view class="section-title">决策日志</view>
+    <view class="log-item" wx:for="{{logs}}" wx:key="id">
+      <view class="log-header">
+        <text class="log-scene">{{item.scene}}</text>
+        <text class="log-date">{{item.createdAt}}</text>
+      </view>
+      <text class="log-question">{{item.question}}</text>
+      <text class="log-answer">{{item.answer}}</text>
+      <text class="log-verdict {{item.verdict === '通过' ? 'pass' : item.verdict === '否决' ? 'reject' : 'partial'}}">
+        {{item.verdict}}
+      </text>
+    </view>
+  </view>
+
+  <view class="loading" wx:if="{{analyzing}}">分析中...</view>
+</view>

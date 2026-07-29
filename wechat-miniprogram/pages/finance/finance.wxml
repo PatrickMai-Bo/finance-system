@@ -1,0 +1,71 @@
+<view class="container">
+  <!-- 页面标题 -->
+  <view class="page-header">
+    <text class="page-title">个人财务</text>
+    <text class="page-subtitle">资产管理 + 现金流优化</text>
+  </view>
+
+  <!-- 财务概览卡片 -->
+  <view class="overview-cards">
+    <view class="overview-card" bindtap="goToFinanceOverview">
+      <view class="card-icon">📊</view>
+      <text class="card-title">财务概览</text>
+      <text class="card-desc">净资产/现金流/自由度</text>
+    </view>
+    <view class="overview-card" bindtap="goToLedger">
+      <view class="card-icon">📝</view>
+      <text class="card-title">记账</text>
+      <text class="card-desc">收支流水/分类统计</text>
+    </view>
+    <view class="overview-card" bindtap="goToHolding">
+      <view class="card-icon">💼</view>
+      <text class="card-title">存量资产</text>
+      <text class="card-desc">资产/负债/现金流</text>
+    </view>
+    <view class="overview-card" bindtap="goToWatchlist">
+      <view class="card-icon">⭐</view>
+      <text class="card-title">自选清单</text>
+      <text class="card-desc">股票/基金自选管理</text>
+    </view>
+  </view>
+
+  <!-- 快速入口 -->
+  <view class="section-title">快速入口</view>
+  <view class="quick-actions">
+    <view class="action-item" bindtap="addLedger">
+      <view class="action-icon">➕</view>
+      <text class="action-text">记一笔</text>
+    </view>
+    <view class="action-item" bindtap="addHolding">
+      <view class="action-icon">💾</view>
+      <text class="action-text">添加资产</text>
+    </view>
+    <view class="action-item" bindtap="viewSummary">
+      <view class="action-icon">📋</view>
+      <text class="action-text">查看汇总</text>
+    </view>
+    <view class="action-item" bindtap="analyzeFinance">
+      <view class="action-icon">🤖</view>
+      <text class="action-text">AI分析</text>
+    </view>
+  </view>
+
+  <!-- 最新动态 -->
+  <view class="section-title">最新动态</view>
+  <view class="recent-activity">
+    <view class="activity-item">
+      <text class="activity-text">今天 09:30 添加一笔餐饮消费 ¥128</text>
+    </view>
+    <view class="activity-item">
+      <text class="activity-text">昨天 15:20 股票自选：贵州茅台 +2.5%</text>
+    </view>
+    <view class="activity-item">
+      <text class="activity-text">前天 10:15 新增资产：货币基金 ¥50,000</text>
+    </view>
+  </view>
+
+  <!-- 财务提示 -->
+  <view class="finance-tip">
+    <text class="tip-text">💡 财务建议：优先扩大被动收入，优化负债结构，提升财务自由度。</text>
+  </view>
+</view>

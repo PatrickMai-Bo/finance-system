@@ -1,0 +1,66 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/finance/finance",
+    "pages/stock/stock",
+    "pages/fund/fund",
+    "pages/profile/profile",
+    "pages/finance/ledger",
+    "pages/finance/holding",
+    "pages/finance/watchlist",
+    "pages/decision/decision",
+    "pages/settings/ai",
+    "pages/settings/llm"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#1E88E5",
+    "navigationBarTitleText": "理财决策系统",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f5f5",
+    "enablePullDownRefresh": true
+  },
+  "tabBar": {
+    "color": "#666666",
+    "selectedColor": "#1E88E5",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "首页",
+        "iconPath": "images/home.png",
+        "selectedIconPath": "images/home-active.png"
+      },
+      {
+        "pagePath": "pages/finance/finance",
+        "text": "财务",
+        "iconPath": "images/finance.png",
+        "selectedIconPath": "images/finance-active.png"
+      },
+      {
+        "pagePath": "pages/stock/stock",
+        "text": "股票",
+        "iconPath": "images/stock.png",
+        "selectedIconPath": "images/stock-active.png"
+      },
+      {
+        "pagePath": "pages/fund/fund",
+        "text": "基金",
+        "iconPath": "images/fund.png",
+        "selectedIconPath": "images/fund-active.png"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的",
+        "iconPath": "images/profile.png",
+        "selectedIconPath": "images/profile-active.png"
+      }
+    ]
+  },
+  "networkTimeout": {
+    "request": 10000,
+    "downloadFile": 10000
+  },
+  "debug": true
+}

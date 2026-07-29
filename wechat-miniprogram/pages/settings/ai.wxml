@@ -1,0 +1,38 @@
+<view class="container">
+  <view class="page-header">
+    <text class="page-title">AI 分析</text>
+    <text class="page-subtitle">多场景智能分析</text>
+  </view>
+
+  <view class="scene-tabs">
+    <view class="tab {{currentScene === item ? 'active' : ''}}" wx:for="{{scenes}}" wx:key="*this" bindtap="switchScene" data-scene="{{item}}">
+      {{item}}
+    </view>
+  </view>
+
+  <view class="input-section">
+    <textarea class="input-area" placeholder="输入分析内容或问题..." value="{{input}}" bindinput="onInput"/>
+    <button class="analyze-btn" bindtap="analyze" loading="{{analyzing}}">开始分析</button>
+  </view>
+
+  <view class="result-section" wx:if="{{result}}">
+    <view class="result-card">
+      <view class="result-header">
+        <text class="result-scene">{{result.sceneName}}</text>
+        <text class="result-confidence">置信度: {{result.confidence}}%</text>
+      </view>
+      <text class="result-analysis">{{result.analysis}}</text>
+      <view class="recommendations">
+        <text class="rec-title">建议:</text>
+        <view class="rec-item" wx:for="{{result.recommendations}}" wx:key="*this">
+          <text class="rec-num">{{index + 1}}.</text>
+          <text class="rec-text">{{item}}</text>
+        </view>
+      </view>
+      <text class="result-time">{{result.timestamp}}</text>
+    </view>
+  </view>
+
+  <view class="loading" wx:if="{{analyzing}}">分析中...</view>
+  <view class="empty" wx:if="{{!result && !analyzing}}">选择场景后输入问题，开始AI分析</view>
+</view>

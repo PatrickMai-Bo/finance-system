@@ -1,0 +1,68 @@
+<view class="container">
+  <!-- 页面标题和筛选 -->
+  <view class="page-header">
+    <view class="page-title">
+      <text class="title">基金筛选</text>
+      <text class="subtitle">智能排行 + AI建议</text>
+    </view>
+    <view class="filter">
+      <picker range="{{categories}}" value="{{categoryIndex}}" bindchange="onCategoryChange">
+        <view class="picker">
+          <text>{{currentCategory}}</text>
+          <text class="arrow">▼</text>
+        </view>
+      </picker>
+    </view>
+  </view>
+
+  <!-- AI分析操作栏 -->
+  <view class="ai-actions" wx:if="{{funds.length > 0}}">
+    <view class="ai-header">
+      <text class="ai-title">AI分析</text>
+      <text class="ai-count">已选 {{selectedCount}} 只</text>
+    </view>
+    <view class="ai-buttons">
+      <button class="ai-btn" bindtap="analyzeSelected">分析所选</button>
+      <button class="ai-btn" bindtap="analyzeAll">分析全部</button>
+    </view>
+  </view>
+
+  <!-- 基金列表 -->
+  <scroll-view class="fund-list" scroll-y>
+    <view class="fund-item" wx:for="{{funds}}" wx:key="id">
+      <view class="fund-top-row">
+        <view class="fund-checkbox">
+          <checkbox value="{{item.code}}" bindchange="onFundSelect" checked="{{selectedFunds[item.code]}}" catchtap="preventBubble"/>
+        </view>
+        <view class="fund-main-info">
+          <view class="fund-name">{{item.name}}</view>
+          <view class="fund-meta">
+            <text class="fund-code">{{item.code}}</text>
+            <text class="fund-type">{{item.type}}</text>
+            <text class="fund-risk">风险:{{item.riskLevel}}</text>
+          </view>
+        </view>
+        <view class="fund-yield-info">
+          <text class="yield-value {{item.yield.indexOf('-') === 0 ? 'down' : 'up'}}">{{item.yield}}</text>
+          <text class="net-value-label">净值:{{item.netValue}}</text>
+        </view>
+      </view>
+      <view class="mock-tag" wx:if="{{item._mock}}">模拟</view>
+    </view>
+
+    <!-- 没有更多 -->
+    <view class="no-more" wx:if="{{!hasMore && funds.length > 0}}">
+      <text>- 已加载全部 {{funds.length}} 条 -</text>
+    </view>
+  </scroll-view>
+
+  <!-- 分页控制器 -->
+  <view class="pagination" wx:if="{{funds.length > 0}}">
+    <button class="page-btn" bindtap="loadPrevPage" disabled="{{currentPage <= 1}}">上一页</button>
+    <view class="page-indicator">
+      <text>第 {{currentPage}} / {{totalPages}} 页</text>
+      <text>共 {{totalItems}} 条</text>
+    </view>
+    <button class="page-btn" bindtap="loadNextPage" disabled="{{currentPage >= totalPages}}">下一页</button>
+  </view>
+</view>

@@ -1,0 +1,114 @@
+<view class="container">
+  <!-- 页面标题和添加按钮 -->
+  <view class="page-header">
+    <view>
+      <text class="page-title">存量资产</text>
+      <text class="page-subtitle">真资产 vs 真负债</text>
+    </view>
+    <button class="add-btn" size="mini" bindtap="showAddModal">添加</button>
+  </view>
+
+  <!-- 资产汇总 -->
+  <view class="holding-summary" wx:if="{{summary}}">
+    <view class="summary-row">
+      <view class="summary-item">
+        <text class="summary-label">总资产</text>
+        <text class="summary-value asset">¥{{formatNumber(summary.totalAsset)}}</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-label">总负债</text>
+        <text class="summary-value liability">¥{{formatNumber(summary.totalLiability)}}</text>
+      </view>
+    </view>
+    <view class="summary-row">
+      <view class="summary-item">
+        <text class="summary-label">净资产</text>
+        <text class="summary-value net">¥{{formatNumber(summary.netWorth)}}</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-label">月现金流</text>
+        <text class="summary-value {{summary.monthlyCashflow >= 0 ? 'income' : 'expense'}}">
+          ¥{{formatNumber(summary.monthlyCashflow)}}
+        </text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 资产列表 -->
+  <scroll-view class="holding-list" scroll-y>
+    <view class="section-title">资产 ({{assets.length}})</view>
+    <view class="holding-item" wx:for="{{assets}}" wx:key="id">
+      <view class="holding-info">
+        <text class="holding-name">{{item.name}}</text>
+        <text class="holding-type asset">资产</text>
+      </view>
+      <view class="holding-details">
+        <text class="holding-amount">¥{{formatNumber(item.amount)}}</text>
+        <text class="holding-cashflow income">+¥{{item.monthlyCashflow}}/月</text>
+      </view>
+      <text class="holding-note">{{item.note}}</text>
+    </view>
+
+    <view class="section-title">负债 ({{liabilities.length}})</view>
+    <view class="holding-item" wx:for="{{liabilities}}" wx:key="id">
+      <view class="holding-info">
+        <text class="holding-name">{{item.name}}</text>
+        <text class="holding-type liability">负债</text>
+      </view>
+      <view class="holding-details">
+        <text class="holding-amount">¥{{formatNumber(item.amount)}}</text>
+        <text class="holding-cashflow expense">-¥{{Math.abs(item.monthlyCashflow)}}/月</text>
+      </view>
+      <text class="holding-note">{{item.note}}</text>
+    </view>
+
+    <!-- 空状态 -->
+    <view class="empty" wx:if="{{assets.length === 0 && liabilities.length === 0}}">
+      <text>暂无资产记录</text>
+      <button class="empty-btn" bindtap="showAddModal">添加资产</button>
+    </view>
+  </scroll-view>
+
+  <!-- 添加资产模态框 -->
+  <view class="modal" wx:if="{{showModal}}">
+    <view class="modal-content">
+      <view class="modal-header">
+        <text class="modal-title">添加资产/负债</text>
+        <text class="modal-close" bindtap="hideAddModal">×</text>
+      </view>
+      <view class="modal-body">
+        <picker range="{{['资产', '负债']}}" value="{{typeIndex}}" bindchange="onTypeChange">
+          <view class="form-item">
+            <text class="form-label">类型</text>
+            <text class="form-value">{{typeIndex === 0 ? '资产' : '负债'}}</text>
+            <text class="form-arrow">▼</text>
+          </view>
+        </picker>
+        
+        <view class="form-item">
+          <text class="form-label">名称</text>
+          <input placeholder="输入资产/负债名称" value="{{newRecord.name}}" bindinput="onNameInput" />
+        </view>
+        
+        <view class="form-item">
+          <text class="form-label">金额</text>
+          <input type="digit" placeholder="输入金额" value="{{newRecord.amount}}" bindinput="onAmountInput" />
+        </view>
+        
+        <view class="form-item">
+          <text class="form-label">月现金流</text>
+          <input type="digit" placeholder="资产为正/负债为负" value="{{newRecord.monthlyCashflow}}" bindinput="onCashflowInput" />
+        </view>
+        
+        <view class="form-item">
+          <text class="form-label">备注</text>
+          <input placeholder="输入备注" value="{{newRecord.note}}" bindinput="onNoteInput" />
+        </view>
+      </view>
+      <view class="modal-footer">
+        <button class="modal-btn cancel" bindtap="hideAddModal">取消</button>
+        <button class="modal-btn submit" bindtap="submitRecord">确定</button>
+      </view>
+    </view>
+  </view>
+</view>
