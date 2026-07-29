@@ -71,7 +71,10 @@ export const screenApi = {
   categories: () => http.get('/screen/fund/categories'),
   // 第二阶段深度分析(LLM),耗时较长
   analyzeStock: (code, invalidate) => http.post('/screen/stock/analyze/' + code, null, { params: { invalidate }, timeout: 180000 }),
-  analyzeFund: (code, invalidate) => http.post('/screen/fund/analyze/' + code, null, { params: { invalidate }, timeout: 180000 })
+  analyzeFund: (code, invalidate) => http.post('/screen/fund/analyze/' + code, null, { params: { invalidate }, timeout: 180000 }),
+  // 全量精排(5条优化规则+LLM二次评分排序),耗时极长
+  refinedStock: (page, size, force) => http.post('/screen/stock/refined', null, { params: { page, size, force }, timeout: 600000 }),
+  refinedFund: (category, page, size, force) => http.post('/screen/fund/refined', null, { params: { category, page, size, force }, timeout: 600000 })
 }
 export const decisionApi = {
   models: () => http.get('/decision/models'),

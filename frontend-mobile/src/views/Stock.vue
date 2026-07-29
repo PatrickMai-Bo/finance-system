@@ -3,8 +3,9 @@
     <div class="head">
       <div class="m-title">股票筛选</div>
       <div class="head-ops">
-        <van-button size="small" type="primary" :loading="running" @click="run">刷新行情</van-button>
-        <van-button size="small" type="success" @click="showWatch = true">自选股</van-button>
+        <van-button size="small" type="warning" :loading="refining" @click="runRefine">精排</van-button>
+        <van-button size="small" type="primary" :loading="running" @click="run">刷新</van-button>
+        <van-button size="small" type="success" @click="showWatch = true">自选</van-button>
       </div>
     </div>
 
@@ -24,6 +25,7 @@
         <b class="nm">{{ s.name }}</b>
         <span class="code">{{ s.code }} · {{ s.industry }}</span>
         <span :class="ratingClass(s.rating)">{{ s.rating }}</span>
+        <span v-if="refinedReady && s.refinedScore" class="refined-badge">精排{{ s.refinedScore }}</span>
       </div>
       <div class="sc-fin">
         <span>PE分位 <b :class="s.peQuantile < 30 ? 'up' : ''">{{ s.peQuantile }}%</b></span>
@@ -160,6 +162,8 @@ async function runDeep(invalidate) {
 
 const loading = ref(false)
 const running = ref(false)
+const refining = ref(false)
+const refinedReady = ref(false)
 const list = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -233,6 +237,17 @@ async function saveWl() {
 }
 async function delWl(id) { await showConfirmDialog({ title: '提示', message: '确认删除?' }); await watchlistApi.remove(id); showSuccessToast('已删除'); await loadWatch() }
 
+async function runRefine() {
+  refining.value = true; refinedReady.value = false
+  try {
+    const res = await screenApi.refinedStock(page.value, pageSize, true)
+    list.value = res.data.list; total.value = res.data.total
+    refinedReady.value = true
+    showSuccessToast('精排完成')
+  } catch (e) { showToast('精排失败:' + (e?.message || e)) }
+  finally { refining.value = false }
+}
+
 onMounted(() => { load(); loadWatch() })
 </script>
 
@@ -267,4 +282,5 @@ onMounted(() => { load(); loadWatch() })
 .deep-page { height: 100%; display: flex; flex-direction: column; background: #f5f7fa; }
 .deep-body { flex: 1; overflow-y: auto; padding: 14px; }
 .deep-foot { padding: 10px 14px; display: flex; gap: 10px; justify-content: center; border-top: 1px solid #ebeef5; background: #fff; }
+.refined-badge { font-size: 10px; background: #e6a23c; color: #fff; padding: 1px 6px; border-radius: 8px; margin-left: 4px; font-weight: 600; }
 </style>

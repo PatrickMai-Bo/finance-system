@@ -173,6 +173,31 @@ public class ScreenController {
         return R.ok(deep.analyzeFund(code));
     }
 
+    /**
+     * 全量精排（5条优化规则+二次LLM评分排序）：
+     * 对所有已通过定量筛选的标的，并发调用 DeepSeek 按优化模板分析，
+     * 提取 refinedScore 重新排序后返回。force=true 清缓存全量重跑。
+     * 耗时较长（30只×并发8≈2-3分钟），前端请设置较长超时。
+     */
+    @PostMapping("/stock/refined")
+    public R<PageResult<Map<String, Object>>> refinedStock(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "false") boolean force) {
+        List<Map<String, Object>> list = deep.refinedStockList(force);
+        return R.ok(paginate(list, page, size));
+    }
+
+    @PostMapping("/fund/refined")
+    public R<PageResult<Map<String, Object>>> refinedFund(
+            @RequestParam(defaultValue = "全部") String category,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "false") boolean force) {
+        List<Map<String, Object>> list = deep.refinedFundList(category, force);
+        return R.ok(paginate(list, page, size));
+    }
+
     private List<Map<String, Object>> markMock(List<Map<String, Object>> list) {
         for (Map<String, Object> m : list) m.put("dataSource", "mock");
         return list;

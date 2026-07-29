@@ -2,7 +2,8 @@
   <div class="page">
     <div class="head">
       <div class="m-title">基金筛选</div>
-      <van-button size="small" type="primary" :loading="running" @click="run">刷新行情</van-button>
+      <van-button size="small" type="warning" :loading="refining" @click="runRefine">精排</van-button>
+      <van-button size="small" type="primary" :loading="running" @click="run">刷新</van-button>
     </div>
 
     <van-tabs v-model:active="catIndex" @change="onCategory" line-width="20">
@@ -25,6 +26,7 @@
         <b class="nm">{{ f.name }}</b>
         <span class="code">{{ f.code }} · {{ f.category }}</span>
         <span :class="ratingClass(f.rating)">{{ f.rating }}</span>
+        <span v-if="refinedReady && f.refinedScore" class="refined-badge">精排{{ f.refinedScore }}</span>
       </div>
       <div class="sc-fin">
         <span v-if="f.peQuantile > 0">PE分位 <b :class="f.peQuantile < 30 ? 'up' : ''">{{ f.peQuantile }}%</b></span>
@@ -89,6 +91,8 @@ import MobileMarkdown from '../components/MobileMarkdown.vue'
 
 const loading = ref(false)
 const running = ref(false)
+const refining = ref(false)
+const refinedReady = ref(false)
 const list = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -176,6 +180,17 @@ async function loadCats() {
   try { const r = await screenApi.categories(); categories.value = r.data || ['全部'] } catch (e) { /* default */ }
 }
 
+async function runRefine() {
+  refining.value = true; refinedReady.value = false
+  try {
+    const res = await screenApi.refinedFund(category.value, page.value, pageSize, true)
+    list.value = res.data.list; total.value = res.data.total
+    refinedReady.value = true
+    showSuccessToast('精排完成')
+  } catch (e) { showToast('精排失败:' + (e?.message || e)) }
+  finally { refining.value = false }
+}
+
 onMounted(() => { loadCats(); load() })
 </script>
 
@@ -203,4 +218,5 @@ onMounted(() => { loadCats(); load() })
 .deep-page { height: 100%; display: flex; flex-direction: column; background: #f5f7fa; }
 .deep-body { flex: 1; overflow-y: auto; padding: 14px; }
 .deep-foot { padding: 10px 14px; display: flex; gap: 10px; justify-content: center; border-top: 1px solid #ebeef5; background: #fff; }
+.refined-badge { font-size: 10px; background: #e6a23c; color: #fff; padding: 1px 6px; border-radius: 8px; margin-left: 4px; font-weight: 600; }
 </style>

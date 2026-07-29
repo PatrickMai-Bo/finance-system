@@ -9,7 +9,10 @@
         <el-button type="success" :disabled="!selectedRows.length" :loading="batchLoading" @click="runBatch">
           批量深度对比({{ selectedRows.length }})
         </el-button>
-        <el-button type="primary" :icon="Refresh" :loading="running" @click="run">刷新全部(行情+AI建议)</el-button>
+        <el-button type="warning" :icon="RefreshRight" :loading="refining" @click="runRefine">
+          精排分析(5规则+LLM重评分)
+        </el-button>
+        <el-button type="primary" :icon="Refresh" :loading="running" @click="run">刷新行情</el-button>
       </div>
     </div>
 
@@ -37,7 +40,11 @@
 
       <el-table :data="list" size="default" stripe @selection-change="onSelChange">
         <el-table-column type="selection" width="48" />
-        <el-table-column prop="rank" label="#" width="50" />
+        <el-table-column label="#" width="55">
+          <template #default="{ row }">
+            <span :class="{ 'refined-rank': refinedReady }">{{ row.refinedRank || row.rank }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="股票 / 代码" min-width="130">
           <template #default="{ row }">
             <div class="name">{{ row.name }}</div>
@@ -69,10 +76,15 @@
             <FcfSpark :data="row.fcfTrend" />
           </template>
         </el-table-column>
-        <el-table-column label="推荐" width="100" align="center">
+        <el-table-column label="推荐" width="110" align="center">
           <template #default="{ row }">
             <span :class="ratingClass(row.rating)">{{ row.rating }}</span>
             <div class="score">评分 {{ row.score }}</div>
+            <div v-if="refinedReady && row.refinedScore" class="refined-score">
+              <el-tag :type="refinedTagType(row.refinedRating)" size="small" effect="dark" class="refined-tag">
+                精排 {{ row.refinedScore }} · {{ row.refinedRating }}
+              </el-tag>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="280">
@@ -164,7 +176,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Refresh, View } from '@element-plus/icons-vue'
+import { Refresh, View, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AiAnalyze from '../components/AiAnalyze.vue'
 import FcfSpark from '../components/FcfSpark.vue'
@@ -174,6 +186,8 @@ import MarkdownView from '../components/MarkdownView.vue'
 
 const loading = ref(false)
 const running = ref(false)
+const refining = ref(false)
+const refinedReady = ref(false)
 const list = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -208,6 +222,24 @@ async function runDeep(invalidate) {
   } catch (e) {
     ElMessage.error('分析失败: ' + (e?.message || e))
   } finally { deepLoading.value = false }
+}
+
+function refinedTagType(r) {
+  return { '强烈推荐': 'danger', '推荐': 'warning', '观察': 'info', '回避': 'success' }[r] || 'info'
+}
+
+async function runRefine() {
+  refining.value = true
+  refinedReady.value = false
+  try {
+    const res = await screenApi.refinedStock(page.value, pageSize, true)
+    list.value = res.data.list
+    total.value = res.data.total
+    refinedReady.value = true
+    ElMessage.success('精排分析完成！已按5条优化规则+LLM重新评分排序')
+  } catch (e) {
+    ElMessage.error('精排分析失败: ' + (e?.message || e))
+  } finally { refining.value = false }
 }
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
@@ -317,4 +349,7 @@ onMounted(load)
 .ops-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 .deep-link { font-size: 12px; cursor: pointer; }
 .deep-result { max-height: 70vh; overflow-y: auto; }
+.refined-rank { color: #e6a23c; font-weight: 800; }
+.refined-score { margin-top: 4px; }
+.refined-tag { max-width: 140px; white-space: normal; line-height: 1.4; }
 </style>
