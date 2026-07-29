@@ -62,16 +62,16 @@
         <div class="deep-body">
           <div v-if="deepName" style="margin-bottom:8px">
             <b>{{ deepName }}</b> <span class="code">{{ deepCode }}</span>
+            <van-tag v-if="deepRefined" size="mini" type="danger" effect="dark" style="margin-left:6px">精排{{ deepRefined }}</van-tag>
           </div>
           <van-tag v-for="t in deepTags" :key="t" size="mini" type="warning" plain style="margin-right:4px">{{ t }}</van-tag>
           <van-tag v-if="deepMode==='real'" size="mini" type="success" style="margin-top:4px">{{ deepModel }}</van-tag>
           <van-loading v-if="deepLoading" style="margin-top:20px;display:block;text-align:center" />
           <MobileMarkdown v-else-if="deepResult" :source="deepResult" />
-          <van-empty v-else description="点击下方按钮开始 AI 深度分析" :image-size="60" style="margin-top:20px" />
+          <van-empty v-else description="请先运行「精排」或点击「强制刷新」" :image-size="60" style="margin-top:20px" />
         </div>
         <div class="deep-foot">
-          <van-button type="warning" size="small" :loading="deepLoading" @click="runDeep(false)">开始分析</van-button>
-          <van-button type="primary" size="small" :loading="deepLoading" @click="runDeep(true)">强制刷新</van-button>
+          <van-button type="warning" size="small" :loading="deepLoading" @click="runDeep">强制刷新(LLM)</van-button>
         </div>
       </div>
     </van-popup>
@@ -137,18 +137,24 @@ const deepMode = ref('')
 const deepModel = ref('')
 const deepLoadingMap = ref({})
 
+const deepRefined = ref('')
+
 function openDeep(s) {
   deepName.value = s.name; deepCode.value = s.code
-  deepTags.value = s.moatTags || []; deepResult.value = ''
-  deepMode.value = ''; deepModel.value = ''
+  deepTags.value = s.moatTags || []
+  // 精排后 s.deepAnalysis 已在row中，直接展示
+  deepResult.value = s.deepAnalysis || ''
+  deepMode.value = s.deepMode || ''
+  deepModel.value = s.deepModel || ''
+  deepRefined.value = s.refinedScore ? s.refinedScore + '·' + s.refinedRating : ''
   deepVisible.value = true
 }
-async function runDeep(invalidate) {
+async function runDeep() {
   if (!deepCode.value) return
   deepLoading.value = true
   deepLoadingMap.value[deepCode.value] = true
   try {
-    const res = await screenApi.analyzeStock(deepCode.value, invalidate)
+    const res = await screenApi.analyzeStock(deepCode.value, true)
     deepResult.value = res.data.analysis || ''
     deepMode.value = res.data.mode || ''
     deepModel.value = res.data.model || ''

@@ -129,21 +129,18 @@
         <div v-if="deepTarget" style="margin-bottom:10px">
           <el-tag v-for="t in deepTarget.moatTags" :key="t" size="small" type="warning" effect="plain" style="margin-right:4px">{{ t }}</el-tag>
           <el-tag :type="deepTarget.dataSource==='real'?'success':'info'" size="small">{{ deepTarget.dataSource==='real'?'真实数据':'演示数据' }}</el-tag>
-          <el-tag v-if="deepMap[deepTarget.code]?.mode==='real'" size="small" type="success" style="margin-left:4px">
-            {{ deepMap[deepTarget.code]?.model || 'AI 分析' }}
-          </el-tag>
+          <el-tag v-if="deepModeTag" size="small" type="success" style="margin-left:4px">{{ deepModeTag }}</el-tag>
+          <el-tag v-if="deepTarget.refinedScore" size="small" type="danger" effect="dark" style="margin-left:4px">精排{{ deepTarget.refinedScore }}·{{ deepTarget.refinedRating }}</el-tag>
         </div>
-        <div v-loading="deepLoading" style="min-height:300px">
-          <div v-if="deepMap[deepTarget?.code]" class="deep-result">
-            <MarkdownView v-if="deepMap[deepTarget.code].analysis" :source="deepMap[deepTarget.code].analysis" />
-            <el-empty v-else description="分析结果为空" :image-size="80" />
-          </div>
-          <el-empty v-else description="点击下方按钮开始AI深度分析" :image-size="80" />
+        <div style="min-height:300px">
+          <template v-if="deepContent">
+            <MarkdownView :source="deepContent" />
+          </template>
+          <el-empty v-else description="请先运行「精排分析」或点击「强制刷新」生成分析" :image-size="80" />
         </div>
         <template #footer>
           <el-button @click="deepVisible = false">关闭</el-button>
-          <el-button type="warning" :loading="deepLoading" @click="runDeep(false)">开始分析</el-button>
-          <el-button type="primary" :loading="deepLoading" @click="runDeep(true)">强制刷新</el-button>
+          <el-button type="warning" :loading="deepLoading" @click="runDeep">强制刷新(重新调用LLM)</el-button>
         </template>
       </el-dialog>
 
@@ -191,16 +188,34 @@ const deepLoading = ref(false)
 const deepTarget = ref(null)
 const deepMap = ref({})
 
-function openDeep(row) { deepTarget.value = row; deepVisible.value = true }
-async function runDeep(invalidate) {
+const deepContent = computed(() => {
+  if (!deepTarget.value) return ''
+  return deepTarget.value.deepAnalysis || deepMap.value[deepTarget.value.code]?.analysis || ''
+})
+const deepModeTag = computed(() => {
+  if (!deepTarget.value) return ''
+  const m = deepTarget.value.deepMode || deepMap.value[deepTarget.value.code]?.mode
+  if (m === 'real') return deepTarget.value.deepModel || 'AI 分析'
+  if (m === 'cached') return '缓存命中'
+  return ''
+})
+
+function openDeep(row) {
+  deepTarget.value = row
+  deepVisible.value = true
+}
+async function runDeep() {
   if (!deepTarget.value) return
   deepLoading.value = true
   try {
     const code = deepTarget.value.code
-    const res = await screenApi.analyzeFund(code, invalidate)
+    const res = await screenApi.analyzeFund(code, true)
     deepMap.value[code] = res.data
+    deepTarget.value.deepAnalysis = res.data.analysis
+    deepTarget.value.deepMode = res.data.mode
+    deepTarget.value.deepModel = res.data.model
   } catch (e) {
-    ElMessage.error('分析失败: ' + (e?.message || e))
+    ElMessage.error('刷新失败: ' + (e?.message || e))
   } finally { deepLoading.value = false }
 }
 
