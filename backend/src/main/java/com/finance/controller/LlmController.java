@@ -49,6 +49,21 @@ public class LlmController {
         return svc.setActive(id) ? R.ok() : R.fail(404, "配置不存在");
     }
 
+    /**
+     * 手动刷新:从磁盘 data/llm-configs.json 重新加载到内存(覆盖当前 in-memory store)。
+     * 适用场景:①外部直接编辑了配置文件;②云端 volume 挂载后容器内文件已变;
+     * ③怀疑 PUT 后写盘静默失败(此时文件是旧的,内存是新的,refresh 会用文件覆盖)。
+     * 失败时回滚到原内存配置,不丢数据。
+     */
+    @PostMapping("/refresh")
+    public R<Map<String, Object>> refresh() {
+        LlmConfigService.RefreshResult r = svc.refresh();
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("count", r.count);
+        data.put("activeId", r.activeId);
+        return r.ok ? R.ok(data) : R.fail(500, r.msg);
+    }
+
     /** 测试连接:向该模型发一句极短对话,验证 baseUrl/apiKey/model 是否可用 */
     @PostMapping("/test/{id}")
     public R<Map<String, Object>> test(@PathVariable Long id) {

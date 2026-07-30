@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>理财投资决策系统 · 交互式 API 文档</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --panel: #ffffff; --border: #e3e6eb; --text: #1f2329;
+    --muted: #6b7280; --accent: #2f6fed; --green: #1a7f37; --blue: #1f6feb;
+    --orange: #bc4c00; --red: #cf222e; --code-bg: #f3f4f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6;
+  }
+  header {
+    position: sticky; top: 0; z-index: 20; background: var(--panel);
+    border-bottom: 1px solid var(--border); padding: 12px 20px;
+  }
+  header h1 { margin: 0 0 8px; font-size: 18px; }
+  .config { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .config label { font-size: 12px; color: var(--muted); }
+  .config input {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+    font-size: 13px; min-width: 220px; background: #fff; color: var(--text);
+  }
+  .config input.token { min-width: 280px; }
+  .layout { display: flex; align-items: flex-start; gap: 16px; padding: 16px 20px; }
+  .sidebar { width: 220px; flex: none; position: sticky; top: 130px; }
+  .sidebar input {
+    width: 100%; padding: 6px 10px; border: 1px solid var(--border);
+    border-radius: 6px; margin-bottom: 10px; font-size: 13px;
+  }
+  .sidebar .grp-btn {
+    display: block; width: 100%; text-align: left; border: none; background: none;
+    padding: 6px 8px; border-radius: 6px; cursor: pointer; color: var(--text); font-size: 13px;
+  }
+  .sidebar .grp-btn:hover { background: #eef2ff; }
+  .sidebar .grp-btn.active { background: #e0eaff; font-weight: 600; }
+  .main { flex: 1; min-width: 0; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 14px;
+  }
+  .card .title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .method {
+    font-weight: 700; font-size: 12px; color: #fff; padding: 2px 8px; border-radius: 4px;
+    min-width: 52px; text-align: center;
+  }
+  .m-GET { background: var(--green); }
+  .m-POST { background: var(--blue); }
+  .m-PUT { background: var(--orange); }
+  .m-DELETE { background: var(--red); }
+  .path { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; font-weight: 600; }
+  .desc { color: var(--muted); margin: 6px 0 8px; }
+  .meta { font-size: 12px; color: var(--muted); }
+  table.params { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+  table.params th, table.params td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; }
+  table.params th { background: var(--code-bg); }
+  .actions { display: flex; gap: 8px; margin-top: 8px; }
+  button.act {
+    border: 1px solid var(--border); background: #fff; color: var(--text);
+    padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  }
+  button.act.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.act:hover { opacity: .88; }
+  pre.resp {
+    background: #0d1117; color: #c9d1d9; padding: 12px; border-radius: 8px;
+    overflow: auto; max-height: 320px; font-size: 12px; white-space: pre-wrap; margin: 10px 0 0;
+  }
+  .status-ok { color: var(--green); font-weight: 600; }
+  .status-err { color: var(--red); font-weight: 600; }
+  .hidden { display: none; }
+  textarea.body-input {
+    width: 100%; min-height: 70px; border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; margin-top: 8px;
+  }
+  .tag { font-size: 11px; color: var(--muted); border: 1px dashed var(--border); padding: 1px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>理财投资决策系统 · 交互式 API 文档</h1>
+  <div class="config">
+    <label>Base URL</label>
+    <input id="baseUrl" value="http://localhost:8090" />
+    <label>Token（可选，登录后自动填入）</label>
+    <input id="token" class="token" placeholder="粘贴登录返回的 token" />
+    <button class="act" onclick="document.getElementById('token').value=''">清空 Token</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <input id="search" placeholder="搜索路径 / 说明 / 分组" oninput="render()" />
+    <div id="groups"></div>
+  </aside>
+  <main class="main" id="list"></main>
+</div>
+
+<script>
+const APIS = [
+  // 认证
+  { g:"认证", m:"POST", p:"/api/auth/login", d:"登录", params:[["body","username, password","必填"]], body:{username:"admin",password:"<APP_PASSWORD>"} },
+  { g:"认证", m:"POST", p:"/api/auth/forgot-reset", d:"忘记密码（手机校验，仅绑定手机可改）", params:[["body","phone, newPassword","必填"]], body:{phone:"<BOUND_PHONE>",newPassword:"NewPass123"} },
+  { g:"认证", m:"GET", p:"/api/auth/me", d:"当前用户信息", params:[], auth:true },
+
+  // 系统
+  { g:"系统", m:"GET", p:"/api/system/online", d:"在线人数（2分钟心窗口）", params:[] },
+  { g:"系统", m:"POST", p:"/api/system/ping", d:"30秒心跳保活", params:[], auth:true },
+  { g:"系统", m:"POST", p:"/api/system/warmup", d:"后台异步预热 stock/fund 深度分析（5分钟节流）", params:[], auth:true },
+
+  // 首页
+  { g:"首页", m:"GET", p:"/api/home/overview", d:"首页概览（净资产/基金TOP3/股票TOP3/AI状态）", params:[], auth:true },
+
+  // 股票筛选
+  { g:"股票筛选", m:"GET", p:"/api/screen/stock", d:"股票筛选列表", params:[["query","page(默认1), size(默认10)","可选"]], auth:true },
+  { g:"股票筛选", m:"POST", p:"/api/screen/stock/run", d:"刷新筛选（清除缓存重跑）", params:[], auth:true },
+  { g:"股票筛选", m:"POST", p:"/api/screen/stock/analyze/{code}", d:"单只深度分析（命中缓存秒出）", params:[["path","code 股票代码","必填"]], auth:true, exPath:"/api/screen/stock/analyze/600519" },
+  { g:"股票筛选", m:"POST", p:"/api/screen/stock/refined", d:"精排分析（并发30只→重排）", params:[["query","force=true 清缓存","可选"]], auth:true },
+  { g:"股票筛选", m:"GET", p:"/api/screen/detail/{code}", d:"单只股票详情", params:[["path","code 股票代码","必填"]], auth:true, exPath:"/api/screen/detail/600519" },
+
+  // 基金筛选
+  { g:"基金筛选", m:"GET", p:"/api/screen/fund", d:"基金筛选列表", params:[["query","category, page, size","可选"]], auth:true },
+  { g:"基金筛选", m:"POST", p:"/api/screen/fund/run", d:"刷新筛选", params:[], auth:true },
+  { g:"基金筛选", m:"POST", p:"/api/screen/fund/analyze/{code}", d:"单只深度分析", params:[["path","code 基金代码","必填"]], auth:true, exPath:"/api/screen/fund/analyze/110011" },
+  { g:"基金筛选", m:"POST", p:"/api/screen/fund/refined", d:"精排分析", params:[["query","force=true","可选"]], auth:true },
+  { g:"基金筛选", m:"GET", p:"/api/screen/fund/categories", d:"所有基金分类", params:[], auth:true },
+
+  // 个人财务 / 记账 / 家底 / 自选
+  { g:"个人财务", m:"GET", p:"/api/finance/balance-sheet", d:"资产负债表", params:[], auth:true },
+  { g:"个人财务", m:"GET", p:"/api/finance/cashflow", d:"现金流（主动/被动收入、支出结构）", params:[], auth:true },
+  { g:"个人财务", m:"GET", p:"/api/finance/freedom", d:"财务自由度（被动收入覆盖率）", params:[], auth:true },
+  { g:"个人财务", m:"POST", p:"/api/ledger/add", d:"记一笔", params:[["body","date,type,amount,description,category","必填"]], auth:true, body:{date:"2026-07-30",type:"支出",amount:100,description:"餐饮",category:"生活"} },
+  { g:"个人财务", m:"DELETE", p:"/api/ledger/{id}", d:"删除一笔", params:[["path","id","必填"]], auth:true, exPath:"/api/ledger/1" },
+  { g:"个人财务", m:"GET", p:"/api/ledger/list", d:"全部流水", params:[], auth:true },
+  { g:"个人财务", m:"GET", p:"/api/ledger/summary", d:"汇总（资产负债表+现金流象限+诊断）", params:[], auth:true },
+  { g:"个人财务", m:"POST", p:"/api/holding/add", d:"新增资产/负债", params:[["body","big_type,name,amount,monthly_cashflow,note","必填"]], auth:true, body:{big_type:"资产",name:"招商银行",amount:50000,monthly_cashflow:0,note:""} },
+  { g:"个人财务", m:"PUT", p:"/api/holding/{id}", d:"修改资产/负债", params:[["path","id","必填"]], auth:true, exPath:"/api/holding/1" },
+  { g:"个人财务", m:"DELETE", p:"/api/holding/{id}", d:"删除资产/负债", params:[["path","id","必填"]], auth:true, exPath:"/api/holding/1" },
+  { g:"个人财务", m:"GET", p:"/api/holding/list", d:"全部条目", params:[], auth:true },
+  { g:"个人财务", m:"GET", p:"/api/holding/summary", d:"净资产+现金流汇总", params:[], auth:true },
+  { g:"个人财务", m:"POST", p:"/api/watchlist/add", d:"新增自选", params:[["body","type,name,code,category,cost,amount,target_price,note","必填"]], auth:true, body:{type:"stock",name:"贵州茅台",code:"600519",category:"白酒",cost:1700,amount:100,target_price:2000,note:""} },
+  { g:"个人财务", m:"PUT", p:"/api/watchlist/{id}", d:"修改自选", params:[["path","id","必填"]], auth:true, exPath:"/api/watchlist/1" },
+  { g:"个人财务", m:"DELETE", p:"/api/watchlist/{id}", d:"删除自选", params:[["path","id","必填"]], auth:true, exPath:"/api/watchlist/1" },
+  { g:"个人财务", m:"GET", p:"/api/watchlist/list", d:"按类型列出（type=stock/fund）", params:[["query","type","可选"]], auth:true },
+  { g:"个人财务", m:"GET", p:"/api/watchlist/summary", d:"组合汇总", params:[], auth:true },
+
+  // 决策思维
+  { g:"决策思维", m:"GET", p:"/api/decision/models", d:"思维模型库（8个）", params:[], auth:true },
+  { g:"决策思维", m:"GET", p:"/api/decision/framework", d:"五阶框架", params:[], auth:true },
+  { g:"决策思维", m:"POST", p:"/api/decision/search", d:"按五阶分析决策问题", params:[["body","question, scene?","必填"]], auth:true, body:{question:"现在是否应该加仓贵州茅台？",scene:"stock"} },
+  { g:"决策思维", m:"GET", p:"/api/decision/logs", d:"决策日志列表", params:[], auth:true },
+
+  // AI 分析 / LLM 配置
+  { g:"AI/LLM", m:"POST", p:"/api/ai/analyze", d:"统一 AI 入口（scene 区分板块）", params:[["body","scene + 对应字段","必填"]], auth:true, body:{scene:"stock",name:"贵州茅台",code:"600519",pe:30,eps:59,roe:0.3} },
+  { g:"AI/LLM", m:"GET", p:"/api/llm/configs", d:"列出模型配置", params:[], auth:true },
+  { g:"AI/LLM", m:"POST", p:"/api/llm/configs", d:"新增模型", params:[["body","name, baseUrl, apiKey, model...","必填"]], auth:true, body:{name:"DeepSeek",baseUrl:"https://api.deepseek.com/v1",apiKey:"<API_KEY>",model:"deepseek-chat"} },
+  { g:"AI/LLM", m:"PUT", p:"/api/llm/configs/{id}", d:"修改/删除模型", params:[["path","id","必填"]], auth:true, exPath:"/api/llm/configs/1" },
+  { g:"AI/LLM", m:"DELETE", p:"/api/llm/configs/{id}", d:"删除模型", params:[["path","id","必填"]], auth:true, exPath:"/api/llm/configs/1" },
+  { g:"AI/LLM", m:"POST", p:"/api/llm/active/{id}", d:"设为激活模型", params:[["path","id","必填"]], auth:true, exPath:"/api/llm/active/1" },
+  { g:"AI/LLM", m:"POST", p:"/api/llm/test/{id}", d:"测试连接", params:[["path","id","必填"]], auth:true, exPath:"/api/llm/test/1" },
+];
+
+let activeGroup = "全部";
+
+function buildGroups(){
+  const wrap = document.getElementById('groups');
+  const set = ["全部", ...[...new Set(APIS.map(a=>a.g))]];
+  wrap.innerHTML = set.map(g=>
+    `<button class="grp-btn${g===activeGroup?' active':''}" onclick="setGroup('${g}')">${g}</button>`
+  ).join('');
+}
+function setGroup(g){ activeGroup = g; buildGroups(); render(); }
+
+function render(){
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const list = document.getElementById('list');
+  const items = APIS.filter(a=>{
+    if(activeGroup!=="全部" && a.g!==activeGroup) return false;
+    if(!q) return true;
+    return (a.p+" "+a.d+" "+a.g).toLowerCase().includes(q);
+  });
+  list.innerHTML = items.map((a,i)=>{
+    const path = a.exPath || a.p;
+    const paramsRows = a.params.length
+      ? `<table class="params"><tr><th>位置</th><th>字段 / 示例</th><th>说明</th></tr>${a.params.map(r=>`<tr><td>${r[0]}</td><td><code>${r[1]}</code></td><td>${r[2]}</td></tr>`).join('')}</table>`
+      : `<div class="meta">无参数</div>`;
+    const bodyArea = (a.m==="POST"||a.m==="PUT") && a.body
+      ? `<textarea class="body-input" id="body-${i}">${escapeHtml(JSON.stringify(a.body,null,2))}</textarea>`
+      : '';
+    return `<div class="card">
+      <div class="title">
+        <span class="method m-${a.m}">${a.m}</span>
+        <span class="path">${path}</span>
+        ${a.auth?'<span class="tag">需登录</span>':''}
+      </div>
+      <div class="desc">${a.d}　<span class="meta">（分组：${a.g}）</span></div>
+      ${paramsRows}
+      ${bodyArea}
+      <div class="actions">
+        <button class="act primary" onclick="send(${i},'${path}')">发送请求</button>
+        <button class="act" onclick="copyCurl(${i},'${path}')">复制 curl</button>
+      </div>
+      <pre class="resp hidden" id="resp-${i}"></pre>
+    </div>`;
+  }).join('') || `<div class="card">无匹配接口</div>`;
+}
+
+function resolvePath(path){
+  return path.replace(/\{(\w+)\}/g, (m,k)=> prompt("请输入 "+k+" 的值：", "") || m);
+}
+async function send(i, path){
+  const a = APIS[i];
+  const base = document.getElementById('baseUrl').value.replace(/\/+$/,'');
+  const realPath = resolvePath(path);
+  const url = base + realPath;
+  const token = document.getElementById('token').value.trim();
+  const headers = { "Accept":"application/json" };
+  if(token) headers["Authorization"] = "Bearer "+token;
+  let body;
+  if((a.m==="POST"||a.m==="PUT") && a.body){
+    body = document.getElementById('body-'+i).value;
+    headers["Content-Type"] = "application/json";
+  }
+  const respEl = document.getElementById('resp-'+i);
+  respEl.classList.remove('hidden');
+  respEl.textContent = "请求中…";
+  try{
+    const opt = { method:a.m, headers };
+    if(body!==undefined) opt.body = body;
+    const r = await fetch(url, opt);
+    const text = await r.text();
+    let pretty = text;
+    try{ pretty = JSON.stringify(JSON.parse(text), null, 2); }catch(e){}
+    respEl.innerHTML = `<span class="status-ok">HTTP ${r.status} ${r.statusText}</span>\n\n${escapeHtml(pretty)}`;
+    // 登录自动取 token
+    if(a.p==="/api/auth/login"){
+      try{
+        const j = JSON.parse(text);
+        const t = j?.data?.token || j?.data?.accessToken || j?.data?.userInfo?.token;
+        if(t){ document.getElementById('token').value = t; respEl.innerHTML += `\n\n<span class="status-ok">✅ 已自动填入 Token</span>`; }
+      }catch(e){}
+    }
+  }catch(e){
+    respEl.innerHTML = `<span class="status-err">请求失败：${escapeHtml(e.message)}</span>\n\n可能原因：CORS 跨域拦截 / 服务未启动 / 需先登录。可改用「复制 curl」在终端执行。`;
+  }
+}
+function copyCurl(i, path){
+  const a = APIS[i];
+  const base = document.getElementById('baseUrl').value.replace(/\/+$/,'');
+  const realPath = resolvePath(path);
+  const url = base + realPath;
+  const token = document.getElementById('token').value.trim();
+  let cmd = `curl -X ${a.m} "${url}" -H "Accept: application/json"`;
+  if(token) cmd += ` -H "Authorization: Bearer ${token}"`;
+  if((a.m==="POST"||a.m==="PUT") && a.body){
+    const b = document.getElementById('body-'+i).value;
+    cmd += ` -H "Content-Type: application/json" -d '${b.replace(/'/g,"'\\''")}'`;
+  }
+  navigator.clipboard.writeText(cmd).then(()=>alert("已复制 curl 命令"));
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+buildGroups();
+render();
+</script>
+</body>
+</html>

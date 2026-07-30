@@ -91,7 +91,9 @@ export const llmApi = {
   update: (id, cfg) => http.put('/llm/configs/' + id, cfg),
   remove: (id) => http.delete('/llm/configs/' + id),
   setActive: (id) => http.post('/llm/active/' + id),
-  test: (id) => http.post('/llm/test/' + id, null, { timeout: 150000 })
+  test: (id) => http.post('/llm/test/' + id, null, { timeout: 150000 }),
+  /** 从磁盘重新加载最新配置到内存(改了文件/怀疑脱钩时点) */
+  refresh: () => http.post('/llm/refresh')
 }
 export const aiApi = {
   // 真实大模型分析耗时较长,单独放宽超时

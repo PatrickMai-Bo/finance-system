@@ -5,12 +5,19 @@
         <h2 class="page-title">AI 深度分析 · 大模型设置</h2>
         <p class="page-sub">全局 AI 中枢 · OpenAI 兼容 · 配置好的模型可在 财务/基金/股票/决策 各板块就地调用做细粒度分析</p>
       </div>
-      <el-button type="primary" :icon="Plus" @click="openAdd">新增模型</el-button>
+      <div class="head-actions">
+        <el-button type="warning" plain :icon="Refresh" :loading="refreshing" @click="refreshCfg">刷新配置</el-button>
+        <el-button type="primary" :icon="Plus" @click="openAdd">新增模型</el-button>
+      </div>
     </div>
 
     <el-alert type="info" :closable="false" style="margin-bottom:16px">
       首批优先接入 <b>DeepSeek</b> 与 <b>阿里百炼(qwen)</b>:编辑对应卡片填入 API Key → 点「测试连接」验证 → 设为默认即可全局生效。
       百炼 qwen 系列支持原生联网搜索(开启开关即可,无需额外搜索接口)。也兼容 Kimi / 智谱 / 混元 / OpenAI 等所有 OpenAI 兼容接口。
+    </el-alert>
+
+    <el-alert v-if="lastRefreshAt" type="success" :closable="true" style="margin-bottom:16px" @close="lastRefreshAt=''">
+      ✓ 已从磁盘重新加载最新配置({{ lastRefreshAt }})，共 {{ lastRefreshCount }} 个模型，当前默认 {{ lastRefreshActive }}。若仍提示 Key 无效，请先在卡片编辑里填入新 Key 后再点「刷新配置」。
     </el-alert>
 
     <el-row :gutter="16">
@@ -58,7 +65,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { llmApi } from '../api'
 
@@ -67,6 +74,10 @@ const configs = ref([])
 const dlg = ref(false)
 const editing = ref(false)
 const testingId = ref(null)
+const refreshing = ref(false)
+const lastRefreshAt = ref('')
+const lastRefreshCount = ref(0)
+const lastRefreshActive = ref('')
 const form = ref({ name: '', baseUrl: '', model: '', apiKey: '', enableSearch: false })
 let editId = null
 
@@ -86,6 +97,21 @@ async function testConn(c) {
     testingId.value = null
   }
 }
+/** 从磁盘重新加载最新配置到内存;用于外部改文件/怀疑 PUT 写盘失败/云端 volume 同步 */
+async function refreshCfg() {
+  refreshing.value = true
+  try {
+    const res = await llmApi.refresh()
+    lastRefreshAt.value = new Date().toLocaleString('zh-CN', { hour12: false })
+    lastRefreshCount.value = res.data.count
+    const actId = res.data.activeId
+    lastRefreshActive.value = (configs.value.find(x => x.id === actId) || {}).name || ('#' + actId)
+    ElMessage.success(`已刷新:${res.data.count} 个模型,默认 ${lastRefreshActive.value}`)
+    await load()
+  } catch (e) { /* 拦截器已弹错误 */ } finally {
+    refreshing.value = false
+  }
+}
 async function save() {
   if (editing.value) await llmApi.update(editId, form.value)
   else await llmApi.add(form.value)
@@ -102,6 +128,7 @@ onMounted(load)
 
 <style scoped>
 .head { display: flex; justify-content: space-between; align-items: flex-start; }
+.head-actions { display: flex; gap: 8px; }
 .model-card { border-radius: 12px; }
 .model-card.active { border: 2px solid #67c23a; }
 .mc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }

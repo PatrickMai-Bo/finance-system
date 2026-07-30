@@ -87,8 +87,10 @@ public class LlmConfigService {
             root.put("activeId", activeId);
             root.put("items", items);
             om.writerWithDefaultPrettyPrinter().writeValue(file, root);
-        } catch (Exception ignore) {
-            // 持久化失败不影响主流程(仅重启后丢配置)
+            System.out.println("[LlmConfigService] 配置已持久化 → " + file.getAbsolutePath() + " (items=" + items.size() + ")");
+        } catch (Exception e) {
+            // 以前吞错导致内存/磁盘脱钩(改了Key但文件没更新)。现在记日志,方便排查;内存依然保留。
+            System.err.println("[LlmConfigService] 持久化失败(内存仍是最新的): " + file.getAbsolutePath() + " → " + e.getMessage());
         }
     }
 
@@ -139,6 +141,41 @@ public class LlmConfigService {
         activeId = id;
         saveToFile();
         return true;
+    }
+
+    /**
+     * 从磁盘重新加载配置到内存(覆盖当前 store 与 activeId)。
+     * 用于:①外部直接编辑了 data/llm-configs.json;②云端 volume 更新;
+     * ③PUT 后怀疑写盘失败的兜底。失败时保留旧内存配置。
+     */
+    public synchronized RefreshResult refresh() {
+        Map<Long, Map<String, Object>> oldStore = new LinkedHashMap<>(store);
+        Long oldActiveId = activeId;
+        long oldSeq = seq.get();
+        store.clear();
+        seq.set(1);
+        activeId = null;
+        if (!loadFromFile()) {
+            // 文件不存在或解析失败,回滚内存
+            store.clear();
+            store.putAll(oldStore);
+            activeId = oldActiveId;
+            seq.set(oldSeq);
+            return RefreshResult.fail("data/llm-configs.json 加载失败(文件不存在或格式错误),已保留原配置");
+        }
+        return RefreshResult.ok(store.size(), activeId);
+    }
+
+    public static class RefreshResult {
+        public final boolean ok;
+        public final String msg;
+        public final int count;
+        public final Long activeId;
+        private RefreshResult(boolean ok, String msg, int count, Long activeId) {
+            this.ok = ok; this.msg = msg; this.count = count; this.activeId = activeId;
+        }
+        static RefreshResult ok(int count, Long activeId) { return new RefreshResult(true, "刷新成功", count, activeId); }
+        static RefreshResult fail(String msg) { return new RefreshResult(false, msg, 0, null); }
     }
 
     public Map<String, Object> active() {
