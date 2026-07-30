@@ -97,3 +97,11 @@ export const aiApi = {
   // 真实大模型分析耗时较长,单独放宽超时
   analyze: (scene, payload) => http.post('/ai/analyze', { scene, payload }, { timeout: 150000 })
 }
+export const systemApi = {
+  /** 在线人数(2 分钟内有心跳的 session 数) */
+  online: () => http.get('/system/online'),
+  /** 前端定时心跳 */
+  ping: () => http.post('/system/ping'),
+  /** 后台预热基金/股票深度分析(命中缓存就秒返) */
+  warmup: () => http.post('/system/warmup')
+}

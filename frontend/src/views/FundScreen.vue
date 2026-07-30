@@ -59,7 +59,7 @@
             <div class="fin-line">规模 {{ row.scale }}亿</div>
           </template>
         </el-table-column>
-        <el-table-column label="推荐" width="100" align="center">
+        <el-table-column label="推荐" width="135" align="center">
           <template #default="{ row }">
             <span :class="ratingClass(row.rating)">{{ row.rating }}</span>
             <div class="score">评分 {{ row.score }}</div>
@@ -82,7 +82,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="建议持有时间 (AI)" min-width="230">
+        <el-table-column label="建议持有时间 (AI)" min-width="240">
           <template #default="{ row }">
             <div v-if="adviceMap[row.code]" class="advice">
               <div class="adv-row"><span class="adv-tag short">短期</span> {{ adviceMap[row.code].short?.horizon }} · 预计 <b :class="retClass(adviceMap[row.code].short?.returnRange)">{{ adviceMap[row.code].short?.returnRange }}</b></div>
@@ -90,6 +90,7 @@
               <div class="adv-row"><span class="adv-tag long">长期</span> {{ adviceMap[row.code].long?.horizon }} · 预计 <b :class="retClass(adviceMap[row.code].long?.returnRange)">{{ adviceMap[row.code].long?.returnRange }}</b></div>
               <div class="adv-mode">{{ adviceMap[row.code].mode === 'real' ? 'AI 推算 · ' + (adviceMap[row.code].model || '') : adviceMap[row.code].mode === 'rule' ? '规则估算(非AI)' : '' }}</div>
             </div>
+            <span v-else-if="adviceLoading" class="no-adv loading">AI 推算中…</span>
             <span v-else class="no-adv">—</span>
           </template>
         </el-table-column>
@@ -341,5 +342,6 @@ onMounted(async () => {
 .deep-result { max-height: 70vh; overflow-y: auto; }
 .refined-rank { color: #e6a23c; font-weight: 800; }
 .refined-score { margin-top: 4px; }
-.refined-tag { max-width: 140px; white-space: normal; line-height: 1.4; }
+.refined-tag { width: 100%; white-space: normal; line-height: 1.4; }
+.no-adv.loading { color: #e6a23c; }
 </style>

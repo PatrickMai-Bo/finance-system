@@ -1,7 +1,16 @@
 <template>
   <div class="page" v-loading="loading">
-    <h2 class="page-title">总览看板</h2>
-    <p class="page-sub">{{ data.marketNote }}</p>
+    <div class="title-row">
+      <div>
+        <h2 class="page-title">总览看板</h2>
+        <p class="page-sub">{{ data.marketNote }}</p>
+      </div>
+      <div class="online-chip" :class="onlineState">
+        <el-icon><UserFilled /></el-icon>
+        <span>在线 <b>{{ online }}</b> 人</span>
+        <span v-if="warming" class="warm-tag">板块预热中…</span>
+      </div>
+    </div>
 
     <!-- 顶部核心指标 -->
     <el-row :gutter="16">
@@ -38,7 +47,10 @@
           <template #header>
             <div class="card-head">
               <span><el-icon><Coin /></el-icon> 基金 TOP 推荐</span>
-              <el-button link type="primary" @click="$router.push('/fund')">进入板块 →</el-button>
+              <div class="card-tools">
+                <el-tag v-if="fundWarmed" size="small" type="success" effect="plain" class="ready-tag">⚡ 板块已就绪</el-tag>
+                <el-button link type="primary" @click="$router.push('/fund')">进入板块 →</el-button>
+              </div>
             </div>
           </template>
           <div v-for="f in data.topFunds" :key="f.code" class="rank-row">
@@ -60,7 +72,10 @@
           <template #header>
             <div class="card-head">
               <span><el-icon><Histogram /></el-icon> 股票 TOP 推荐</span>
-              <el-button link type="primary" @click="$router.push('/stock')">进入板块 →</el-button>
+              <div class="card-tools">
+                <el-tag v-if="stockWarmed" size="small" type="success" effect="plain" class="ready-tag">⚡ 板块已就绪</el-tag>
+                <el-button link type="primary" @click="$router.push('/stock')">进入板块 →</el-button>
+              </div>
             </div>
           </template>
           <div v-for="s in data.topStocks" :key="s.code" class="rank-row">
@@ -93,12 +108,23 @@
 </template>
 
 <script setup>
-import { ref, onMounted, markRaw } from 'vue'
-import { Wallet, Compass, MagicStick } from '@element-plus/icons-vue'
-import { homeApi } from '../api'
+import { ref, onMounted, onBeforeUnmount, markRaw } from 'vue'
+import { Wallet, Compass, MagicStick, UserFilled } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { homeApi, systemApi } from '../api'
 
 const loading = ref(false)
 const data = ref({})
+
+// 在线人数 + 板块预热状态
+const online = ref(0)
+const warming = ref(false)
+const fundWarmed = ref(false)   // 首次成功拿到 fund 缓存视为已就绪
+const stockWarmed = ref(false)  // 首次成功拿到 stock 缓存视为已就绪
+let pingTimer = null
+let warmPollTimer = null
+
+const onlineState = ref('') // '' | 'hot'
 
 const entries = [
   { path: '/finance', title: '个人财务系统', book: '资产 / 负债 · 现金流', desc: '资产负债表 · 现金流 · 财务自由', icon: markRaw(Wallet), color: '#e6a23c' },
@@ -111,19 +137,124 @@ function ratingClass(r) {
   return { '强烈推荐': 'rating-strong', '推荐': 'rating-rec', '观察': 'rating-watch', '回避': 'rating-avoid' }[r] || 'rating-watch'
 }
 
+/** 后台预热基金+股票深度分析(命中缓存就秒返,首次冷启动 ~60s) */
+async function tryWarmup(triggeredByPing) {
+  if (warming.value) return
+  warming.value = true
+  try {
+    const res = await systemApi.warmup()
+    const status = res?.data?.status
+    if (triggeredByPing) {
+      // 心跳触发的,无需打扰用户
+      if (status === 'started' || status === 'running') {
+        // 后台预热刚启动,启动轮询直到看见已就绪
+        pollWarmed()
+      } else if (status === 'throttled') {
+        // 缓存可用,直接认为已就绪
+        fundWarmed.value = stockWarmed.value = true
+      }
+    } else {
+      // 首次进入触发,只在状态变化时给一个非打扰提示
+      if (status === 'started') {
+        ElMessage.info('正在后台预热基金/股票板块(首次 ~60s),点击板块时秒出')
+        pollWarmed()
+      } else if (status === 'throttled') {
+        fundWarmed.value = stockWarmed.value = true
+      }
+    }
+  } catch (e) {
+    // 后台预热失败不影响首屏
+  } finally {
+    warming.value = false
+  }
+}
+
+/** 轮询板块缓存是否就绪(精排) */
+async function pollWarmed() {
+  clearInterval(warmPollTimer)
+  let n = 0
+  warmPollTimer = setInterval(async () => {
+    n++
+    try {
+      const [fs, ss] = await Promise.all([
+        homeApi.overview().catch(() => null), // 维持心跳顺手刷数据
+        // 真正确认 fund/stock 已就绪:用列表接口打通缓存链
+        Promise.all([
+          (await import('../api')).screenApi.fund('全部', 1, 1).catch(() => null),
+          (await import('../api')).screenApi.stock(1, 1).catch(() => null)
+        ])
+      ])
+      const [fRes, sRes] = ss
+      const fList = fRes?.data?.list || []
+      const sList = sRes?.data?.list || []
+      if (fList.length && fList[0].deepAnalysis) fundWarmed.value = true
+      if (sList.length && sList[0].deepAnalysis) stockWarmed.value = true
+      if (fundWarmed.value && stockWarmed.value) {
+        clearInterval(warmPollTimer)
+      }
+    } catch (e) {}
+    if (n > 120) clearInterval(warmPollTimer) // 最多轮询 10 分钟
+  }, 8000)
+}
+
+async function refreshOnline() {
+  try {
+    const res = await systemApi.online()
+    online.value = res?.data?.online || 0
+    onlineState.value = online.value > 1 ? 'hot' : ''
+  } catch (e) {}
+}
+
+async function ping() {
+  try {
+    const res = await systemApi.ping()
+    online.value = res?.data?.online || 0
+    // 在线人数 > 0 时,如果还没预热过,触发一次
+    if (online.value > 0 && !fundWarmed.value && !stockWarmed.value) {
+      tryWarmup(true)
+    }
+  } catch (e) {}
+}
+
 onMounted(async () => {
+  // 1. 先并行加载概览数据 + 在线人数
   loading.value = true
   try {
-    const res = await homeApi.overview()
-    data.value = res.data
+    const [ov] = await Promise.all([
+      homeApi.overview().catch(() => null),
+      refreshOnline()
+    ])
+    if (ov) data.value = ov.data
   } finally { loading.value = false }
+
+  // 2. 在线人数 > 0 → 后台启动板块预热(把精排分析结果写进缓存)
+  if (online.value > 0) tryWarmup(false)
+
+  // 3. 启动定时心跳(30s):同时让「在线人数」面板实时更新
+  pingTimer = setInterval(ping, 30000)
+})
+
+onBeforeUnmount(() => {
+  clearInterval(pingTimer); pingTimer = null
+  clearInterval(warmPollTimer); warmPollTimer = null
 })
 </script>
 
 <style scoped>
+.title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.online-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 16px; font-size: 12px;
+  background: #f4f4f5; color: #606266; border: 1px solid transparent;
+}
+.online-chip.hot { background: #f0f9eb; color: #67c23a; border-color: #e1f3d8; }
+.online-chip b { font-size: 14px; font-weight: 700; margin: 0 2px; }
+.warm-tag { color: #e6a23c; margin-left: 4px; }
+.card-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+.card-tools { display: flex; align-items: center; gap: 10px; }
+.ready-tag { font-weight: 600; }
 .stat-label { color: #909399; font-size: 13px; }
 .stat-value { font-size: 24px; font-weight: 700; margin-top: 6px; }
-.card-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
 .rank-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px dashed #ebeef5; }
 .rank-row:last-child { border-bottom: none; }
 .rank-left { display: flex; align-items: center; gap: 8px; }
