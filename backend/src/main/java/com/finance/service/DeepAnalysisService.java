@@ -291,13 +291,24 @@ public class DeepAnalysisService {
             extractScore(reply, result, data);
             extractAdvice(reply, result, scene, data);
         } catch (Exception e) {
+            System.err.println("[DeepAnalysis] LLM chat失败 scene=" + scene + " code=" + data.get("code") + " err=" + e);
             result.put("mode", "error");
-            result.put("analysis", "⚠️ AI 分析失败:" + e.getMessage());
+            result.put("analysis", "⚠️ AI 分析失败,请稍后重试或点击「强制刷新」(" + friendlyErr(e) + ")");
             result.put("refinedScore", data.getOrDefault("score", 0));
             result.put("refinedRating", data.getOrDefault("rating", "观察"));
             result.put("advice", buildRuleAdviceOnly(scene, data));
         }
         return result;
+    }
+
+    /** 用户友好的错误分类(避免把 Jackson 内部异常文本/堆栈直接展示) */
+    private String friendlyErr(Exception e) {
+        String m = e.getMessage() == null ? "" : e.getMessage();
+        if (m.contains("timeout") || m.contains("Timeout")) return "请求超时";
+        if (m.contains("401") || m.contains("Authentication")) return "API Key 无效";
+        if (m.contains("429")) return "请求频率受限";
+        if (m.contains("parse") || m.contains("Json") || m.contains("Conversion")) return "AI 返回内容格式异常";
+        return "AI 服务异常";
     }
 
     private void extractScore(String reply, Map<String, Object> result, Map<String, Object> data) {
@@ -307,20 +318,25 @@ public class DeepAnalysisService {
                 result.put("refinedScore", Integer.parseInt(m.group(1)));
                 result.put("refinedRating", m.group(2));
                 result.put("confidence", m.group(3));
+                result.put("parseError", false);
                 return;
-            } catch (Exception ignore) {}
+            } catch (Exception e) {
+                System.err.println("[DeepAnalysis] 精排评分JSON 解析失败 code=" + data.get("code") + " match=" + m.group() + " err=" + e);
+            }
         }
         result.put("refinedScore", data.getOrDefault("score", 0));
         result.put("refinedRating", data.getOrDefault("rating", "观察"));
         result.put("confidence", "");
+        result.put("parseError", m.find() /* matched but parse failed */);
     }
 
     /** 从 LLM 回复中提取「建议持有时间」JSON;解析失败回退到规则估算,保证列不空 */
     private void extractAdvice(String reply, Map<String, Object> result, String scene, Map<String, Object> data) {
         Matcher m = ADVICE_PAT.matcher(reply);
         if (m.find()) {
+            String raw = m.group();
             try {
-                JsonNode n = mapper.readTree(m.group());
+                JsonNode n = mapper.readTree(raw);
                 Map<String, Object> adv = new LinkedHashMap<>();
                 adv.put("code", data.get("code"));
                 adv.put("short", segFromJson(n.path("short")));
@@ -330,7 +346,9 @@ public class DeepAnalysisService {
                 adv.put("model", result.get("model"));
                 result.put("advice", adv);
                 return;
-            } catch (Exception ignore) {}
+            } catch (Exception e) {
+                System.err.println("[DeepAnalysis] 建议持有JSON 解析失败 code=" + data.get("code") + " raw=" + raw + " err=" + e);
+            }
         }
         result.put("advice", buildRuleAdviceOnly(scene, data));
     }
@@ -371,12 +389,17 @@ public class DeepAnalysisService {
         return """
         身份:资深价值投资者。标的:%s
         已有定量数据:%s
-        请严格只输出以下两个 JSON 块,不要输出任何分析正文:
+        请严格只输出以下两个 JSON 块,不要输出任何分析正文、不要 markdown、不要解释:
         1. 精排评分: {"refinedScore":85,"refinedRating":"强烈推荐","confidence":"高"}
            评分=排雷(0-25)+护城河(0-25)+估值性价比(0-20)+涨跌比(0-20)+实操适合度(0-10)满分100;
            refinedRating:强烈推荐(≥80) 推荐(60-79) 观察(40-59) 回避(<40)
-        2. 建议持有时间: {"short":{"horizon":"3-6个月","returnRange":"+5%~+15%","logic":"一句话理由"},"mid":{"horizon":"1-2年","returnRange":"+10%~+25%","logic":"一句话理由"},"long":{"horizon":"3年以上","returnRange":"+20%~+40%","logic":"一句话理由"}}
+        2. 建议持有时间: {"short":{"horizon":"3-6个月","returnRange":"+5%%~+15%%","logic":"一句话理由"},"mid":{"horizon":"1-2年","returnRange":"+10%%~+25%%","logic":"一句话理由"},"long":{"horizon":"3年以上","returnRange":"+20%%~+40%%","logic":"一句话理由"}}
         收益区间必须保守、给区间,不得与上方已知数据矛盾。
+
+        硬性格式要求(必须严格遵守,否则系统将无法解析):
+        - JSON 中禁止任何 emoji、特殊符号(如 ⌛、✅、❌、🔥、💎 等),所有字段值只能用中文、英文、数字与基本标点(逗号/句号/百分号/连字符/波浪号)
+        - 字段值不要使用引号嵌套引号
+        - logic 一句话即可,不要换行不要列表
         """.formatted(codeName, metrics);
     }
 
@@ -417,6 +440,11 @@ public class DeepAnalysisService {
         {"short":{"horizon":"3-6个月","returnRange":"+5%~+15%","logic":"一句话理由"},"mid":{"horizon":"1-2年","returnRange":"+10%~+25%","logic":"一句话理由"},"long":{"horizon":"3年以上","returnRange":"+20%~+40%","logic":"一句话理由"}}
         ```
         收益区间必须保守、给区间;不得与安全边际/历史业绩明显矛盾。
+
+        硬性格式要求(必须严格遵守,否则系统将无法解析):
+        - JSON 中禁止任何 emoji、特殊符号(如 ⌛、✅、❌、🔥、💎 等),所有字段值只能用中文、英文、数字与基本标点
+        - 字段值不要使用引号嵌套引号
+        - logic 一句话即可,不要换行不要列表
         """;
     }
 
