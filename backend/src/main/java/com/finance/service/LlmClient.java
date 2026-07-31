@@ -62,7 +62,7 @@ public class LlmClient {
 
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint(baseUrl)))
-                .timeout(Duration.ofSeconds(120))
+                .timeout(Duration.ofSeconds(8))  // 单次模型调用硬超时(避免一只股票阻塞整个列表)
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + apiKey)
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body), StandardCharsets.UTF_8))

@@ -1,5 +1,6 @@
 package com.finance.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
@@ -9,9 +10,17 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 两阶段筛选的第二阶段：对已通过定量筛选的标的，调用 LLM 按严格7段模板做深度分析。
- * 含 11 条约束规则 + LLM 精排评分 JSON。
- * 缓存 60 分钟；精排批量分析后，点「详细分析」直接命中缓存，不再调用模型。
+ * 两阶段筛选的第二阶段:对已通过定量筛选的标的,调用 LLM 按"价值投资+护城河"严格模板做深度分析。
+ *
+ * 核心要求(已并入提示词):
+ *  1. 自动识别标的类型(A股个股 / 公募基金),按分支逻辑分析
+ *  2. 身份:资深价值投资者,严格遵循《聪明的投资者》《穷查理宝典》投资理念
+ *  3. 规则:先排雷,再谈收益;规避致命风险优先;不预测短期涨跌;侧重3年中长期判断
+ *  4. 输出5段:【标的类型识别】→【风险排查总结】→【估值&基本面分析】→【核心风险汇总】→【最终投资评级+操作建议】
+ *  5. 同时输出两块 JSON: 精排评分 + 建议持有时间(短期/中期/长期+持有时间+预计收益率+理由)
+ *
+ * 缓存 60 分钟;精排批量分析后,点「详细分析」直接命中缓存,不再调用模型。
+ * 「建议持有时间」在精排阶段一并算出写入 row.advice,前端无需再独立调 advice 接口。
  */
 @Service
 public class DeepAnalysisService {
@@ -20,14 +29,19 @@ public class DeepAnalysisService {
     private final LlmConfigService llmCfg;
     private final RealScreenService realScreen;
     private final ObjectMapper mapper = new ObjectMapper();
-    private final ExecutorService pool = Executors.newFixedThreadPool(8);
+    private final ExecutorService pool = Executors.newFixedThreadPool(16);
 
     private final Map<String, Map<String, Object>> cache = new ConcurrentHashMap<>();
     private final Map<String, Long> cacheAt = new ConcurrentHashMap<>();
     private static final long TTL = 60 * 60 * 1000L;
 
+    // 精排评分 JSON: {"refinedScore":85,"refinedRating":"强烈推荐","confidence":"高"}
     private static final Pattern SCORE_PAT = Pattern.compile(
         "\\{\\s*\"refinedScore\"\\s*:\\s*(\\d+)\\s*,\\s*\"refinedRating\"\\s*:\\s*\"([^\"]+)\"\\s*,\\s*\"confidence\"\\s*:\\s*\"([^\"]+)\"\\s*\\}");
+
+    // 建议持有时间 JSON: {"short":{"horizon":"...","returnRange":"...","logic":"..."},"mid":{...},"long":{...}}
+    private static final Pattern ADVICE_PAT = Pattern.compile(
+        "\\{\\s*\"short\"\\s*:\\s*\\{[^}]*\\}\\s*,\\s*\"mid\"\\s*:\\s*\\{[^}]*\\}\\s*,\\s*\"long\"\\s*:\\s*\\{[^}]*\\}\\s*\\}");
 
     public DeepAnalysisService(LlmClient llm, LlmConfigService llmCfg, RealScreenService realScreen) {
         this.llm = llm;
@@ -35,12 +49,12 @@ public class DeepAnalysisService {
         this.realScreen = realScreen;
     }
 
-    /** 股票深度分析（优先走缓存，无缓存则调LLM） */
+    /** 股票深度分析(优先走缓存,无缓存则调LLM) */
     public Map<String, Object> analyzeStock(String code) {
         return analyze("stock", code, () -> findStock(code));
     }
 
-    /** 基金深度分析（优先走缓存） */
+    /** 基金深度分析(优先走缓存) */
     public Map<String, Object> analyzeFund(String code) {
         return analyze("fund", code, () -> findFund(code));
     }
@@ -60,8 +74,9 @@ public class DeepAnalysisService {
     public void invalidateAll() { cache.clear(); cacheAt.clear(); }
 
     /**
-     * 全量精排：并发深度分析所有标的 → 提取精排评分 → 重排。
-     * force=true 清缓存全量重跑。分析结果自动入缓存，后续点「详细分析」秒出。
+     * 全量精排:并发深度分析所有标的 → 提取精排评分 + 建议持有时间 → 重排。
+     * force=true 清缓存全量重跑。分析结果自动入缓存,后续点「详细分析」秒出。
+     * 返回的 list 中每项包含:row原数据 + deepAnalysis + advice + refinedScore + refinedRating
      */
     public List<Map<String, Object>> refinedStockList(boolean force) {
         try { return refinedList("stock", realScreen.stockList(), force); } catch (Exception e) { return List.of(); }
@@ -80,10 +95,8 @@ public class DeepAnalysisService {
             String key = scene + ":" + code;
             futures.add(pool.submit(() -> {
                 if (force) { cache.remove(key); cacheAt.remove(key); }
-                // ★ 缓存命中：直接用缓存结果（精排分析过的标的不再调LLM）
                 Map<String, Object> hit = cache.get(key);
                 if (hit != null && System.currentTimeMillis() - cacheAt.getOrDefault(key, 0L) < TTL) return hit;
-                // 未命中：调 LLM 并自动入缓存
                 Map<String, Object> result = doAnalyze(scene, item);
                 cache.put(key, result); cacheAt.put(key, System.currentTimeMillis());
                 return result;
@@ -93,7 +106,7 @@ public class DeepAnalysisService {
         List<Map<String, Object>> result = new ArrayList<>();
         for (int i = 0; i < futures.size(); i++) {
             try {
-                Map<String, Object> analysis = futures.get(i).get(180, TimeUnit.SECONDS);
+                Map<String, Object> analysis = futures.get(i).get(12, TimeUnit.SECONDS);  // 单只 LLM 8s + 4s 缓冲,超时就走 rule-based fallback
                 Map<String, Object> item = new LinkedHashMap<>(raw.get(i));
                 item.put("deepAnalysis", analysis.get("analysis"));
                 item.put("deepMode", analysis.get("mode"));
@@ -101,6 +114,8 @@ public class DeepAnalysisService {
                 item.put("refinedScore", analysis.getOrDefault("refinedScore", raw.get(i).getOrDefault("score", 0)));
                 item.put("refinedRating", analysis.getOrDefault("refinedRating", raw.get(i).getOrDefault("rating", "观察")));
                 item.put("confidence", analysis.getOrDefault("confidence", ""));
+                // ★ 建议持有时间合并到 row(避免前端再调一次 advice 接口,防止中文URL/超时导致空列)
+                item.put("advice", analysis.getOrDefault("advice", buildRuleAdviceOnly(scene, raw.get(i))));
                 result.add(item);
             } catch (Exception e) {
                 Map<String, Object> item = new LinkedHashMap<>(raw.get(i));
@@ -108,6 +123,7 @@ public class DeepAnalysisService {
                 item.put("deepMode", "error");
                 item.put("refinedScore", raw.get(i).getOrDefault("score", 0));
                 item.put("refinedRating", raw.get(i).getOrDefault("rating", "观察"));
+                item.put("advice", buildRuleAdviceOnly(scene, raw.get(i)));
                 result.add(item);
             }
         }
@@ -138,6 +154,7 @@ public class DeepAnalysisService {
             result.put("analysis", "⚠️ 未配置 AI 模型或未填写 API Key");
             result.put("refinedScore", data.getOrDefault("score", 0));
             result.put("refinedRating", data.getOrDefault("rating", "观察"));
+            result.put("advice", buildRuleAdviceOnly(scene, data));
             return result;
         }
         try {
@@ -147,11 +164,13 @@ public class DeepAnalysisService {
             result.put("model", active.get("name") + " / " + active.get("model"));
             result.put("analysis", cleanAnalysis(reply));
             extractScore(reply, result, data);
+            extractAdvice(reply, result, scene, data);
         } catch (Exception e) {
             result.put("mode", "error");
-            result.put("analysis", "⚠️ AI 分析失败：" + e.getMessage());
+            result.put("analysis", "⚠️ AI 分析失败:" + e.getMessage());
             result.put("refinedScore", data.getOrDefault("score", 0));
             result.put("refinedRating", data.getOrDefault("rating", "观察"));
+            result.put("advice", buildRuleAdviceOnly(scene, data));
         }
         return result;
     }
@@ -171,15 +190,88 @@ public class DeepAnalysisService {
         result.put("confidence", "");
     }
 
-    private String cleanAnalysis(String reply) {
-        Matcher m = SCORE_PAT.matcher(reply);
-        return m.find() ? reply.substring(0, m.start()).trim() : reply;
+    /** 从 LLM 回复中提取「建议持有时间」JSON;解析失败回退到规则估算,保证列不空 */
+    private void extractAdvice(String reply, Map<String, Object> result, String scene, Map<String, Object> data) {
+        Matcher m = ADVICE_PAT.matcher(reply);
+        if (m.find()) {
+            try {
+                JsonNode n = mapper.readTree(m.group());
+                Map<String, Object> adv = new LinkedHashMap<>();
+                adv.put("code", data.get("code"));
+                adv.put("short", segFromJson(n.path("short")));
+                adv.put("mid", segFromJson(n.path("mid")));
+                adv.put("long", segFromJson(n.path("long")));
+                adv.put("mode", "real");
+                adv.put("model", result.get("model"));
+                result.put("advice", adv);
+                return;
+            } catch (Exception ignore) {}
+        }
+        result.put("advice", buildRuleAdviceOnly(scene, data));
     }
 
-    // ================= 提示词模板 =================
+    private Map<String, Object> segFromJson(JsonNode n) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("horizon", n.path("horizon").asText(""));
+        m.put("returnRange", n.path("returnRange").asText(""));
+        m.put("logic", n.path("logic").asText(""));
+        return m;
+    }
+
+    private String cleanAnalysis(String reply) {
+        // 把两块 JSON 都剥离掉,只留 5 段分析正文
+        String s = reply;
+        Matcher s1 = SCORE_PAT.matcher(s);
+        if (s1.find()) s = s.substring(0, s1.start()) + s.substring(s1.end());
+        Matcher s2 = ADVICE_PAT.matcher(s);
+        if (s2.find()) s = s.substring(0, s2.start()) + s.substring(s2.end());
+        return s.trim();
+    }
+
+    // ================= 提示词模板(用户最新要求版) =================
 
     private String buildPrompt(String scene, Map<String, Object> d) {
         return "stock".equals(scene) ? buildStockPrompt(d) : buildFundPrompt(d);
+    }
+
+    /**
+     * 共享前缀:身份 + 规则 + 输入说明 + 输出框架 + 硬性要求 + 末尾 JSON
+     */
+    private String sharedHead(String codeName) {
+        return """
+        身份:资深价值投资者,严格遵循《聪明的投资者》、《穷查理宝典》投资理念。
+        规则:首先自动识别标的类型:A股个股 / 混合型/指数公募基金。
+        核心准则:先排雷,再谈收益;规避致命风险优先,不预测短期涨跌,侧重3年维度中长期判断。
+
+        硬性要求:
+        1. 禁止单纯乐观唱多,必须同时客观列出利空;
+        2. 不预测短期几天、几个月涨跌;判断周期锁定3年中长期;
+        3. 输出结构清晰,使用标题分段;
+        4. 最终输出格式:先【标的类型识别】→【风险排查总结】→【估值&基本面分析】→【核心风险汇总】→【最终投资评级+操作建议】
+
+        输入标的:%s
+        """.formatted(codeName);
+    }
+
+    private String sharedTail() {
+        return """
+
+        ---
+        ### 分析完成后,末尾必须单独输出两个 JSON 块(不放进 markdown 文档里,仅末尾追加):
+
+        第一个:精排评分
+        ```json
+        {"refinedScore":85,"refinedRating":"强烈推荐","confidence":"高"}
+        ```
+        评分:排雷(0-25)+护城河/经理(0-25)+估值性价比(0-20)+涨跌比(0-20)+实操适合度(0-10),满分100。
+        refinedRating:强烈推荐(≥80)、推荐(60-79)、观察(40-59)、回避(<40)。
+
+        第二个:建议持有时间(短期/中期/长期)
+        ```json
+        {"short":{"horizon":"3-6个月","returnRange":"+5%~+15%","logic":"一句话理由"},"mid":{"horizon":"1-2年","returnRange":"+10%~+25%","logic":"一句话理由"},"long":{"horizon":"3年以上","returnRange":"+20%~+40%","logic":"一句话理由"}}
+        ```
+        收益区间必须保守、给区间;不得与安全边际/历史业绩明显矛盾。
+        """;
     }
 
     // ==================== 股票提示词 ====================
@@ -193,95 +285,40 @@ public class DeepAnalysisService {
         String moatScore = str(d.get("moatScore"));
         String moatTags = d.get("moatTags") instanceof List ? String.join("、", (List<String>) d.get("moatTags")) : "";
         String score = str(d.get("score")), rating = str(d.get("rating"));
+        String codeName = code + "(" + name + ")";
 
-        return """
-你现在是一名遵循格雷厄姆价值投资+芒格护城河体系的投资分析师，严格按照「先排雷、再定性、最后算估值」的逆向逻辑分析。
+        String body = """
+        ### 已有定量数据(由系统从东财业绩报表+腾讯实时行情采集,经格雷厄姆公式计算):
+        - 当前价格:%s 元 | PE-TTM:%s | PE 分位:%s%% | ROE:%s%%
+        - 毛利率:%s%% | 内在价值:%s 元 | 安全边际:%s%%
+        - 护城河评分:%s | 护城河标签:%s | 系统评分:%s · %s | 行业:%s
 
-请分析标的：%s（%s）
+        ### 情况A:标的为 A 股个股
+        #### 1. 基础排雷(最先检查,出现重大风险直接降低评级)
+        ①是否 ST/*ST、有无退市风险;
+        ②近三年是否财务暴雷、造假丑闻;
+        ③连续净利润亏损情况;
+        ④行业政策利空风险。
 
-### 已有定量数据（由系统从东财业绩报表+腾讯实时行情采集，经格雷厄姆公式计算）：
-- 当前价格：%s 元 | PE-TTM：%s | PE分位：%s%% | ROE：%s%%
-- 毛利率：%s%% | 内在价值：%s 元 | 安全边际：%s%%
-- 护城河评分：%s | 护城河标签：%s | 系统评分：%s · %s | 行业：%s
+        #### 2. 估值分析(核心指标 PE-TTM、PEG、PB)
+        对比近 5/10 年历史估值分位;区分成长股、价值股估值标准;客观说明估值高低,不单一依靠估值下定论。
 
-### 请按以下固定结构分析，只讲核心结论：
+        #### 3. 基本面三层检验
+        ①行业:长期需求空间、行业景气度、潜在替代品风险;
+        ②公司护城河:护城河强弱、是否逐年弱化;竞争格局;
+        ③盈利:ROE 稳定性、净利润增速、现金流健康度。
 
-## 一、一句话核心结论
-类型、能不能买、适合仓位、最大风险。
+        #### 4. 风险清单
+        列出所有可见利空、潜在隐患。
 
-## 二、基础排雷（生死线）
-1. 退市/ST/财务造假风险：有/无，依据
-2. 盈利稳定性：连续盈利/强周期波动/亏损
-3. 现金流与负债：现金流是否覆盖利润，有息负债是否安全
+        #### 5. 结论分级
+        【优先建仓 / 观望等待估值回落 / 规避不考虑】
+        附带建议:适合小仓位试错 or 不适合入场,参考安全边际。
+        """.formatted(price, pe, peQuantile, roe, grossMargin,
+                intrinsicValue, safetyMargin, moatScore, moatTags,
+                score, rating, industry);
 
-## 三、风格与属性定性
-1. 标的类型（消费白马/科技成长/周期股等）
-2. 核心赚什么钱（分红/业绩增长/估值修复/赛道景气度）
-3. 组合定位（主力底仓/卫星进攻/纯投机）
-
-## 四、核心价值判断
-1. 护城河与定价权：核心壁垒，有无松动
-2. 行业需求：底层需求趋势，赛道增减
-3. 盈利增速：未来1-2年合理增速
-4. 估值性价比：PE-TTM=%s，分位=%s%%，用PEG判断
-
-## 五、涨跌边界与概率
-1. 正常下跌空间：预估百分比，支撑位（**必须用完整熊市历史极值，禁止截取局部区间**）
-2. 极端下跌空间：预估百分比，触发条件
-3. 上涨空间：短期/长期预期 + 核心上涨动力
-   **所有长期收益预期必须写明前提假设，注明"如果发生XX风险，收益预期会下调"**
-4. 最可能走势：震荡慢涨/暴涨暴跌/横盘磨底
-   **以下涨跌情景概率仅为模型推演估算，不代表市场确定性预测**
-
-## 六、实操建议与纪律
-1. 适配仓位：占总投资资金建议比例
-2. 买入条件：满足什么再入手
-3. **止损体系必须双轨并行**：
-   a) 净值分层价格止损（结合历史最大回撤设分层预警线+清仓线，成长股禁止15%%一刀切）
-   b) 逻辑止损清单（至少包含：基本面恶化/行业景气度拐点/护城河松动）
-4. 绝对不能做的事
-
-## 七、5秒决策速查
-□ 无暴雷退市风险 □ 赛道长期有价值 □ 估值性价比匹配 □ 跌幅可承受 □ 符合能力圈
-
----
-
-### 严格约束规则（共11条，必须全部纳入分析）：
-
-**规则1·规模时效**：优先最新季度规模数据，严禁过时数据。规模短期增幅超80%%须单独分析扩张冲击。
-
-**规则2·持有人结构**：分析散户/机构占比对净值波动影响。
-
-**规则3·分层止损**：成长股/高波动标的禁止15%%一刀切。结合完整熊市历史最大回撤，设分层预警+清仓线。
-
-**规则4·客观平衡**：既要揭示下行风险，也要客观写明上行优势。结论不能单向悲观。
-
-**规则5·禁止绝对化**：区分"未跨行业扩张"与"无法创造超额收益"。禁止"必然""绝对""永远"，标注置信度。
-
-**规则6·止损双轨并行**：必须同时包含【净值分层价格止损】+【逻辑止损清单】。逻辑止损至少含：基本面恶化/赛道景气度拐点/护城河松动。
-
-**规则7·最大回撤用完整熊市极值**：禁止截取局部区间缩小回撤数据、低估下行风险。
-
-**规则8·持仓以最新季报为准**：判断当前赛道以最新季报重仓股/主营业务为准，禁止套用多年前历史标签。
-
-**规则9·长期预期带前提**：所有长期收益预期必须写明前提假设，并注明"如果发生XX风险，收益预期会下调"。
-
-**规则10·概率仅推演**：所有涨跌情景概率仅为模型推演估算，必须备注"不代表市场确定性预测"。
-
-**规则11·区分从业年限与管理年限**：证券从业年限≠基金管理年限，不要混淆。
-
----
-
-### 精排评分（分析完成后，末尾单独输出以下JSON块，不要放markdown里）：
-```json
-{"refinedScore":85,"refinedRating":"强烈推荐","confidence":"高"}
-```
-评分：排雷(0-25)+护城河(0-25)+估值性价比(0-20)+涨跌比(0-20)+实操适合度(0-10)，满分100。
-refinedRating：强烈推荐(≥80)、推荐(60-79)、观察(40-59)、回避(<40)。
-""".formatted(name, code,
-            price, pe, peQuantile, roe, grossMargin,
-            intrinsicValue, safetyMargin, moatScore, moatTags,
-            score, rating, industry, pe, peQuantile);
+        return sharedHead(codeName) + body + sharedTail();
     }
 
     // ==================== 基金提示词 ====================
@@ -291,97 +328,77 @@ refinedRating：强烈推荐(≥80)、推荐(60-79)、观察(40-59)、回避(<40
         String category = str(d.get("category")), nav = str(d.get("nav"));
         String return1y = str(d.get("return1y")), return3y = str(d.get("return3y"));
         String fee = str(d.get("fee")), score = str(d.get("score")), rating = str(d.get("rating"));
+        String codeName = code + "(" + name + ")";
 
-        return """
-你现在是一名遵循格雷厄姆价值投资+芒格护城河体系的投资分析师，严格按照「先排雷、再定性、最后算估值」的逆向逻辑分析。
+        String body = """
+        ### 已有定量数据(由系统从天天基金实时排行采集):
+        - 基金类型:%s | 净值:%s | 近1年:%s%% | 近3年:%s%% | 费率:%s
+        - 系统评分:%s · %s
 
-请分析标的：%s（%s）
+        ### 情况B:标的为公募基金(主动/指数基金)
+        #### 1. 基础排雷
+        ①基金规模异常(过小清盘风险);
+        ②基金经理任职年限(必须区分证券从业年限 和 基金管理年限,禁止混淆);
+        ③有无频繁更换基金经理;
+        ④历史重大回撤(以完整熊市历史极值为准,禁止截取局部区间缩小);
+        ⑤持仓是否高度集中。
 
-### 已有定量数据（由系统从天天基金实时排行采集）：
-- 基金类型：%s | 净值：%s | 近1年：%s%% | 近3年：%s%% | 费率：%s
-- 系统评分：%s · %s
+        #### 2. 持仓分析
+        ①前十大重仓风格、重仓行业;
+        ②整体持仓估值水平(重仓个股 PE、PEG 综合水平);
+        ③主动基金额外重点:基金经理投资风格是否长期稳定、是否追热点、换手率特征;
+        ④指数基金额外重点:对应指数历史估值分位。
 
-### 请按以下固定结构分析：
+        #### 3. 收益与风险
+        ①中长期业绩;
+        ②最大回撤(完整熊市极值);
+        ③波动特征。
 
-## 一、一句话核心结论
-类型、能不能买、适合仓位、最大风险。
+        #### 4. 风险清单
 
-## 二、基础排雷（生死线）
-1. 基金经理稳定性：【必须区分证券从业年限和管理基金年限！】从业几年？管基金几年？完整牛熊经历？近期有无变更？
-2. 规模风险：最新季度规模（严禁用过期数据）。过大→策略失效？过小→清盘？增幅超80%%须单独分析冲击
-3. 风格漂移：持仓以最新季报重仓股为准，禁止套用多年前标签
-4. 持有人结构：散户/机构占比，各自对净值波动影响
+        #### 5. 结论分级
+        【优先建仓 / 观望等待估值回落 / 规避不考虑】
+        附带定投 / 一次性小仓建议。
+        """.formatted(category, nav, return1y, return3y, fee, score, rating);
 
-## 三、风格与属性定性
-1. 基金类型（指数/主动价值/主动成长/行业主题/QDII）
-2. 核心赚什么钱（指数β/经理α/赛道β/债券票息）
-3. 组合定位（主力底仓/卫星进攻/防御配置）
+        return sharedHead(codeName) + body + sharedTail();
+    }
 
-## 四、核心价值判断
-### 指数基金/宽基：
-- 对应指数PE-TTM、历史分位、合理估值区间、股息率、预期年化
+    // ================= 规则兜底(无 LLM 或 LLM 失败时,保证「建议持有时间」列不空) =================
 
-### 主动管理基金：
-1. 基金经理：证券从业年限___年，管理基金年限___年（两者必须区分写清！），牛熊完整度，能力圈与持仓匹配度
-2. 操作风格：持股集中度、换手率、持有周期
-3. 持仓赛道：【以最新季报重仓股为准】核心行业，景气度（上行/见顶/下行）
-4. 历史风控：**完整熊市历史最大回撤极值（禁止截取局部区间）**、回撤修复能力
-5. 行情匹配：擅长牛市进攻/熊市防御/震荡选股？客观写优劣势
+    private Map<String, Object> buildRuleAdviceOnly(String scene, Map<String, Object> row) {
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("code", row.get("code"));
+        double margin = num(row.get("safetyMargin"));
+        double y3 = num(row.get("return3y"));
+        double shortR, midR, longR;
+        if ("fund".equals(scene) && y3 > 0) {
+            shortR = Math.min(30, y3 * 0.2);
+            midR = Math.min(60, y3 * 0.5);
+            longR = Math.min(120, y3);
+        } else {
+            shortR = margin * 0.5;
+            midR = margin;
+            longR = margin * 1.5;
+        }
+        r.put("short", seg("3-6个月", pct(shortR), "规则估算(非AI)"));
+        r.put("mid", seg("1-2年", pct(midR), "规则估算(非AI)"));
+        r.put("long", seg("3年以上", pct(longR), "规则外的简单外推"));
+        r.put("mode", "rule");
+        return r;
+    }
 
-## 五、涨跌边界与概率
-1. 正常回撤空间：预估%%，对应市场条件（用完整熊市历史极值）
-2. 极端回撤空间：预估%%，触发条件
-3. 上涨空间：短期/长期预期 + 核心动力
-   **所有长期收益预期必须写明前提假设，注明"如果发生XX风险，收益预期会下调"**
-4. 最可能走势
-   **以下涨跌情景概率仅为模型推演估算，不代表市场确定性预测**
+    private Map<String, Object> seg(String h, String rr, String logic) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("horizon", h);
+        m.put("returnRange", rr);
+        m.put("logic", logic);
+        return m;
+    }
 
-## 六、实操建议与纪律
-1. 适配仓位：建议比例
-2. 买入条件
-3. **止损体系必须双轨并行**：
-   a) 净值分层价格止损（结合历史最大回撤设分层预警线+清仓线，成长风格禁止15%%一刀切）
-   b) 逻辑止损清单（至少含：基金经理变更、赛道景气度拐点、规模短期暴涨策略失效）
-4. 绝对不能做的事
-
-## 七、5秒决策速查
-□ 基金经理稳定 □ 策略长期有效 □ 净值有性价比 □ 回撤可承受 □ 符合能力圈
-
----
-
-### 严格约束规则（共11条，必须全部纳入分析）：
-
-**规则1·规模时效**：最新季度规模，严禁过期。短期增幅>80%%须单独分析策略冲击。
-
-**规则2·持有人结构**：散户/机构占比，对净值波动的影响评估。
-
-**规则3·分层止损**：成长风格/行业主题禁止15%%一刀切。结合完整熊市历史最大回撤设分层预警+清仓线。
-
-**规则4·客观平衡**：风险侧和机会侧均衡，不能单向悲观。
-
-**规则5·禁止绝对化**：区分"未跨行业投资"与"无法跨行业创造超额"。禁止"必然""绝对""永远"。
-
-**规则6·止损双轨并行**：净值分层价格止损 + 逻辑止损。逻辑止损必含：基金经理变更、赛道景气度拐点、规模短期暴涨策略失效。
-
-**规则7·最大回撤用完整熊市极值**：禁止截取局部区间缩小回撤数据。
-
-**规则8·持仓以最新季报为准**：判断当前赛道以最新季报重仓股为准，禁止套用多年前标签。
-
-**规则9·长期预期带前提**：所有长期收益预期必须写明前提假设，注明"如果发生XX风险，收益预期会下调"。
-
-**规则10·概率仅推演**：所有涨跌情景概率仅为模型推演估算，备注"不代表市场确定性预测"。
-
-**规则11·区分从业年限与管理年限**：证券从业年限 和 基金管理年限，两者必须分别写明，禁止混淆。
-
----
-
-### 精排评分（分析完成后末尾单独输出JSON，不放markdown）：
-```json
-{"refinedScore":85,"refinedRating":"强烈推荐","confidence":"高"}
-```
-评分：经理(0-25)+策略风控(0-25)+性价比(0-20)+涨跌比(0-20)+实操适合度(0-10)，满分100。
-refinedRating：强烈推荐(≥80)、推荐(60-79)、观察(40-59)、回避(<40)。
-""".formatted(name, code, category, nav, return1y, return3y, fee, score, rating);
+    private String pct(double v) {
+        String sign = v >= 0 ? "+" : "";
+        return sign + Math.round(v) + "%";
     }
 
     // ================= util =================
@@ -392,5 +409,10 @@ refinedRating：强烈推荐(≥80)、推荐(60-79)、观察(40-59)、回避(<40
         if (o == null) return 0;
         if (o instanceof Number) return ((Number) o).intValue();
         try { return Integer.parseInt(o.toString().trim()); } catch (Exception e) { return 0; }
+    }
+    private double num(Object o) {
+        if (o == null) return 0;
+        if (o instanceof Number) return ((Number) o).doubleValue();
+        try { return Double.parseDouble(o.toString()); } catch (Exception e) { return 0; }
     }
 }

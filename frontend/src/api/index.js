@@ -63,8 +63,9 @@ export const watchlistApi = {
   summary: (type) => http.get('/watchlist/summary', { params: { type } })
 }
 export const screenApi = {
-  stock: (page, size) => http.get('/screen/stock', { params: { page, size } }),
-  fund: (category, page, size) => http.get('/screen/fund', { params: { category, page, size } }),
+  // 列表接口默认会附带 deepAnalysis(LLM 精排),30+ 只股票 + DeepSeek 慢响应会超过默认 30s
+  stock: (page, size) => http.get('/screen/stock', { params: { page, size }, timeout: 90000 }),
+  fund: (category, page, size) => http.get('/screen/fund', { params: { category, page, size }, timeout: 90000 }),
   runStock: () => http.post('/screen/stock/run'),
   runFund: () => http.post('/screen/fund/run'),
   // 建议持有时间(AI 推算),耗时较长,放宽超时
