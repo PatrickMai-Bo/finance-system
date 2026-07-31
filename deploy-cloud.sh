@@ -63,6 +63,11 @@ build_frontend() {
 deploy() {
   echo "==> [3/3] SCP 到云端并重建容器"
   if [[ "$MODE" == "all" || "$MODE" == "frontend" ]]; then
+    # 关键:先清空云端旧 dist,否则 scp -r 不会删除远端多余文件,
+    # 残留的旧 JS chunk 会导致浏览器用旧代码(改了逻辑却仍跑旧行为)。
+    echo "    清空云端旧 dist (防止陈旧 chunk 残留)"
+    ssh -i "$SSH_KEY" "${SSH_USER}@${CLOUD_HOST}" \
+        "rm -rf ${REMOTE_DIR}/dist/* ${REMOTE_DIR}/dist-mobile/*"
     echo "    上传前端静态资源 dist/ dist-mobile/"
     scp -i "$SSH_KEY" -r dist/.        "${SSH_USER}@${CLOUD_HOST}:${REMOTE_DIR}/dist/"
     scp -i "$SSH_KEY" -r dist-mobile/. "${SSH_USER}@${CLOUD_HOST}:${REMOTE_DIR}/dist-mobile/"

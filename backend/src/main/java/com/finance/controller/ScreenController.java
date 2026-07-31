@@ -31,7 +31,7 @@ public class ScreenController {
         this.deep = deep;
     }
 
-    /** 股票筛选结果：自动深度分析+精排排序，缓存60分钟。首次加载稍慢（约60s），之后秒出。 */
+    /** 股票筛选结果：自动深度分析+精排排序。热缓存毫秒级返回；冷缓存秒级返回定量结果并后台预热 AI 精排。 */
     @GetMapping("/stock")
     public R<PageResult<Map<String, Object>>> stock(
             @RequestParam(defaultValue = "1") int page,

@@ -13,6 +13,10 @@
       </div>
     </div>
 
+    <el-alert v-if="aiPolling" type="warning" :closable="false" show-icon class="ai-pending-banner">
+      AI 精排分析正在后台计算(约 20-30 秒),完成后本页会自动刷新为完整 AI 结果。
+    </el-alert>
+
     <!-- 我的自选基 · 增删改查 + AI 组合点评 -->
     <WatchlistPanel type="fund" title="我的自选基" />
 
@@ -84,13 +88,12 @@
         </el-table-column>
         <el-table-column label="建议持有时间 (AI)" min-width="240">
           <template #default="{ row }">
-            <div v-if="adviceMap[row.code]" class="advice">
-              <div class="adv-row"><span class="adv-tag short">短期</span> {{ adviceMap[row.code].short?.horizon }} · 预计 <b :class="retClass(adviceMap[row.code].short?.returnRange)">{{ adviceMap[row.code].short?.returnRange }}</b></div>
-              <div class="adv-row"><span class="adv-tag mid">中期</span> {{ adviceMap[row.code].mid?.horizon }} · 预计 <b :class="retClass(adviceMap[row.code].mid?.returnRange)">{{ adviceMap[row.code].mid?.returnRange }}</b></div>
-              <div class="adv-row"><span class="adv-tag long">长期</span> {{ adviceMap[row.code].long?.horizon }} · 预计 <b :class="retClass(adviceMap[row.code].long?.returnRange)">{{ adviceMap[row.code].long?.returnRange }}</b></div>
-              <div class="adv-mode">{{ adviceMap[row.code].mode === 'real' ? 'AI 推算 · ' + (adviceMap[row.code].model || '') : adviceMap[row.code].mode === 'rule' ? '规则估算(非AI)' : '' }}</div>
+            <div v-if="row.advice" class="advice">
+              <div class="adv-row"><span class="adv-tag short">短期</span> {{ row.advice.short?.horizon || '—' }} · 预计 <b :class="retClass(row.advice.short?.returnRange)">{{ row.advice.short?.returnRange || '—' }}</b></div>
+              <div class="adv-row"><span class="adv-tag mid">中期</span> {{ row.advice.mid?.horizon || '—' }} · 预计 <b :class="retClass(row.advice.mid?.returnRange)">{{ row.advice.mid?.returnRange || '—' }}</b></div>
+              <div class="adv-row"><span class="adv-tag long">长期</span> {{ row.advice.long?.horizon || '—' }} · 预计 <b :class="retClass(row.advice.long?.returnRange)">{{ row.advice.long?.returnRange || '—' }}</b></div>
+              <div class="adv-mode">{{ row.advice.mode === 'real' ? 'AI 推算 · ' + (row.advice.model || '') : row.advice.mode === 'rule' ? '规则估算(非AI)' : '—' }}</div>
             </div>
-            <span v-else-if="adviceLoading" class="no-adv loading">AI 推算中…</span>
             <span v-else class="no-adv">—</span>
           </template>
         </el-table-column>
@@ -157,7 +160,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Refresh, View } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AiAnalyze from '../components/AiAnalyze.vue'
@@ -166,6 +169,8 @@ import { screenApi, aiApi } from '../api'
 import MarkdownView from '../components/MarkdownView.vue'
 
 const loading = ref(false)
+const aiPolling = ref(false)
+const running = ref(false)
 const refining = ref(false)
 const refinedReady = ref(false)
 const list = ref([])
@@ -174,8 +179,6 @@ const page = ref(1)
 const pageSize = 10
 const category = ref('全部')
 const categories = ref(['全部'])
-const adviceMap = ref({})
-const adviceLoading = ref(false)
 const selectedRows = ref([])
 const batchVisible = ref(false)
 const batchLoading = ref(false)
@@ -201,6 +204,8 @@ const deepModeTag = computed(() => {
 function openDeep(row) {
   deepTarget.value = row
   deepVisible.value = true
+  // 列表精简分析不含长文;若为空自动拉取完整分析(结果会写入缓存)
+  if (!row.deepAnalysis) runDeep()
 }
 async function runDeep() {
   if (!deepTarget.value) return
@@ -248,20 +253,34 @@ async function load() {
     list.value = res.data.list
     total.value = res.data.total
     if (list.value.length && list.value[0].deepAnalysis) refinedReady.value = true
+    if (list.value.some(r => r.aiPending)) startAiPoll()
+    else stopAiPoll()
   } finally { loading.value = false }
-  loadAdvice(false)
 }
 
-async function loadAdvice(invalidate) {
-  adviceLoading.value = true
-  try {
-    const r = await screenApi.adviceFund(category.value, page.value, pageSize, invalidate)
-    const m = {}
-    ;(r.data || []).forEach(a => { if (a.code) m[a.code] = a })
-    adviceMap.value = m
-  } catch (e) {
-    // 建议失败不影响主列表
-  } finally { adviceLoading.value = false }
+let aiPollTimer = null
+function startAiPoll() {
+  if (aiPolling.value) return
+  aiPolling.value = true
+  let tries = 0
+  aiPollTimer = setInterval(async () => {
+    tries++
+    if (tries > 8) { stopAiPoll(); return }
+    try {
+      const res = await screenApi.fund(category.value, page.value, pageSize)
+      if (!res.data.list.some(r => r.aiPending)) {
+        list.value = res.data.list
+        total.value = res.data.total
+        if (res.data.list.length && res.data.list[0].deepAnalysis) refinedReady.value = true
+        stopAiPoll()
+        ElMessage.success('AI 精排已完成')
+      }
+    } catch (e) { /* 轮询期间忽略错误,继续等待 */ }
+  }, 8000)
+}
+function stopAiPoll() {
+  aiPolling.value = false
+  if (aiPollTimer) { clearInterval(aiPollTimer); aiPollTimer = null }
 }
 
 function retClass(rr) {
@@ -298,10 +317,9 @@ async function run() {
   running.value = true
   try {
     await screenApi.runFund()
-    ElMessage.success('已刷新真实行情,正在重算 AI 持有建议...')
+    ElMessage.success('已刷新真实行情,正在重算 AI 深度分析+精排...')
     page.value = 1
     await load()
-    await loadAdvice(true)
   } finally { running.value = false }
 }
 
@@ -310,6 +328,7 @@ onMounted(async () => {
   categories.value = c.data
   await load()
 })
+onUnmounted(stopAiPoll)
 </script>
 
 <style scoped>
@@ -333,6 +352,7 @@ onMounted(async () => {
 .adv-mode { margin-top: 4px; font-size: 11px; color: #909399; }
 .no-adv { color: #c0c4cc; }
 .head-actions { display: flex; gap: 10px; }
+.ai-pending-banner { margin-bottom: 14px; }
 .batch-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 4px; }
 .batch-name { font-size: 12px; color: #2b6cb0; background: #f0f6ff; padding: 2px 10px; border-radius: 10px; }
 .batch-mode { margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }

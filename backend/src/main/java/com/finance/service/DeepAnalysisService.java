@@ -2,6 +2,7 @@ package com.finance.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -34,6 +35,12 @@ public class DeepAnalysisService {
     private final Map<String, Map<String, Object>> cache = new ConcurrentHashMap<>();
     private final Map<String, Long> cacheAt = new ConcurrentHashMap<>();
     private static final long TTL = 60 * 60 * 1000L;
+
+    // 后台预热:避免冷缓存时列表接口同步跑 30 次 LLM 导致前端 30s 超时
+    private final Set<String> warmScenes = ConcurrentHashMap.newKeySet();
+    private final Map<String, Boolean> warming = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService scheduler =
+            Executors.newSingleThreadScheduledExecutor(r -> { Thread t = new Thread(r, "llm-warmup"); t.setDaemon(true); return t; });
 
     // 精排评分 JSON: {"refinedScore":85,"refinedRating":"强烈推荐","confidence":"高"}
     private static final Pattern SCORE_PAT = Pattern.compile(
@@ -86,48 +93,155 @@ public class DeepAnalysisService {
         try { return refinedList("fund", realScreen.fundList(category), force); } catch (Exception e) { return List.of(); }
     }
 
+    /**
+     * 全量精排核心。
+     * - force=true:清缓存 + 同步全量重跑(手动「精排分析」按钮用,前端已设长超时)。
+     * - force=false:若热缓存命中 → 直接合并排序(毫秒级);若冷缓存 → 立即返回定量结果(秒级),
+     *   并在后台触发 LLM 精排预热,预热完成后下一次加载即为完整 AI 精排结果。
+     * 这样列表接口永远不会因同步跑 30 次 LLM 而阻塞前端。
+     */
     private List<Map<String, Object>> refinedList(String scene, List<Map<String, Object>> raw, boolean force) {
-        if (force) invalidateAll();
+        if (force) {
+            invalidateAll();
+            return computeAndSort(raw, scene);
+        }
+        if (isWarm(raw, scene)) return mergeAndSort(raw, scene);
+        // 冷缓存:先返回定量结果,后台预热
+        triggerWarm(scene, raw);
+        return quantOnly(raw, scene);
+    }
 
+    /** 启动即后台预热股票/基金精排,并每 50 分钟(早于 60 分钟 TTL)自动续热,确保列表几乎始终命中热缓存 */
+    @PostConstruct
+    public void init() {
+        try { triggerWarm("stock", realScreen.stockList()); } catch (Exception ignore) {}
+        try { triggerWarm("fund", realScreen.fundList("全部")); } catch (Exception ignore) {}
+        scheduler.scheduleWithFixedDelay(() -> {
+            try { triggerWarm("stock", realScreen.stockList()); } catch (Exception ignore) {}
+            try { triggerWarm("fund", realScreen.fundList("全部")); } catch (Exception ignore) {}
+        }, 50, 50, TimeUnit.MINUTES);
+    }
+
+    private boolean isWarm(List<Map<String, Object>> raw, String scene) {
+        if (warmScenes.contains(scene)) {
+            // 复核首条是否仍新鲜,防止 60min TTL 过期后仍误判为热
+            if (!raw.isEmpty()) {
+                String k0 = scene + ":" + raw.get(0).get("code");
+                if (!(cache.containsKey(k0) && System.currentTimeMillis() - cacheAt.getOrDefault(k0, 0L) < TTL)) {
+                    warmScenes.remove(scene);
+                }
+            }
+        }
+        if (warmScenes.contains(scene)) return true;
+        if (raw.isEmpty()) return false;
+        boolean all = raw.stream().allMatch(m -> {
+            String k = scene + ":" + m.get("code");
+            return cache.containsKey(k) && System.currentTimeMillis() - cacheAt.getOrDefault(k, 0L) < TTL;
+        });
+        if (all) warmScenes.add(scene);
+        return all;
+    }
+
+    /** 后台触发精排预热(若已在预热则跳过);逐只调 LLM 并写入缓存,完成后标记 scene 为热 */
+    private void triggerWarm(String scene, List<Map<String, Object>> raw) {
+        if (warming.putIfAbsent(scene, true) != null) return;
+        pool.submit(() -> {
+            try {
+                for (Map<String, Object> item : raw) {
+                    String code = String.valueOf(item.get("code"));
+                    String key = scene + ":" + code;
+                    if (cache.containsKey(key) && System.currentTimeMillis() - cacheAt.getOrDefault(key, 0L) < TTL) continue;
+                    try {
+                        Map<String, Object> r = doAnalyze(scene, item, true);
+                        cache.put(key, r); cacheAt.put(key, System.currentTimeMillis());
+                    } catch (Exception ignore) { /* 单只失败不影响整体 */ }
+                }
+                warmScenes.add(scene);
+            } finally { warming.remove(scene); }
+        });
+    }
+
+    /** 热缓存命中:合并缓存里的 AI 分析 + 按 refinedScore 重排 */
+    private List<Map<String, Object>> mergeAndSort(List<Map<String, Object>> raw, String scene) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> item : raw) {
+            String k = scene + ":" + item.get("code");
+            Map<String, Object> a = cache.get(k);
+            Map<String, Object> m = new LinkedHashMap<>(item);
+            if (a != null) {
+                m.put("deepAnalysis", a.get("analysis"));
+                m.put("deepMode", a.get("mode"));
+                m.put("deepModel", a.get("model"));
+                m.put("refinedScore", a.getOrDefault("refinedScore", item.getOrDefault("score", 0)));
+                m.put("refinedRating", a.getOrDefault("refinedRating", item.getOrDefault("rating", "观察")));
+                m.put("confidence", a.getOrDefault("confidence", ""));
+                m.put("advice", a.getOrDefault("advice", buildRuleAdviceOnly(scene, item)));
+            } else {
+                m.put("refinedScore", item.getOrDefault("score", 0));
+                m.put("refinedRating", item.getOrDefault("rating", "观察"));
+                m.put("advice", buildRuleAdviceOnly(scene, item));
+            }
+            result.add(m);
+        }
+        result.sort((a, b) -> Integer.compare(toInt(b.get("refinedScore")), toInt(a.get("refinedScore"))));
+        for (int i = 0; i < result.size(); i++) result.get(i).put("refinedRank", i + 1);
+        return result;
+    }
+
+    /** 冷缓存:立即返回定量结果(按安全边际+护城河排序),标记 aiPending,等后台预热完成 */
+    private List<Map<String, Object>> quantOnly(List<Map<String, Object>> raw, String scene) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> item : raw) {
+            Map<String, Object> m = new LinkedHashMap<>(item);
+            m.put("refinedScore", item.getOrDefault("score", 0));
+            m.put("refinedRating", item.getOrDefault("rating", "观察"));
+            m.put("advice", buildRuleAdviceOnly(scene, item));
+            m.put("deepAnalysis", null);
+            m.put("aiPending", true);
+            result.add(m);
+        }
+        result.sort((a, b) -> Double.compare(
+                num(b.get("safetyMargin")) + num(b.get("moatScore")),
+                num(a.get("safetyMargin")) + num(a.get("moatScore"))));
+        for (int i = 0; i < result.size(); i++) result.get(i).put("refinedRank", i + 1);
+        return result;
+    }
+
+    /** force=true 时同步全量重跑(手动按钮用) */
+    private List<Map<String, Object>> computeAndSort(List<Map<String, Object>> raw, String scene) {
+        List<Map<String, Object>> result = new ArrayList<>();
         List<Future<Map<String, Object>>> futures = new ArrayList<>();
         for (Map<String, Object> item : raw) {
             String code = String.valueOf(item.get("code"));
             String key = scene + ":" + code;
             futures.add(pool.submit(() -> {
-                if (force) { cache.remove(key); cacheAt.remove(key); }
-                Map<String, Object> hit = cache.get(key);
-                if (hit != null && System.currentTimeMillis() - cacheAt.getOrDefault(key, 0L) < TTL) return hit;
-                Map<String, Object> result = doAnalyze(scene, item);
-                cache.put(key, result); cacheAt.put(key, System.currentTimeMillis());
-                return result;
+                cache.remove(key); cacheAt.remove(key);
+                Map<String, Object> r = doAnalyze(scene, item, true);
+                cache.put(key, r); cacheAt.put(key, System.currentTimeMillis());
+                return r;
             }));
         }
-
-        List<Map<String, Object>> result = new ArrayList<>();
         for (int i = 0; i < futures.size(); i++) {
+            Map<String, Object> a;
             try {
-                Map<String, Object> analysis = futures.get(i).get(12, TimeUnit.SECONDS);  // 单只 LLM 8s + 4s 缓冲,超时就走 rule-based fallback
-                Map<String, Object> item = new LinkedHashMap<>(raw.get(i));
-                item.put("deepAnalysis", analysis.get("analysis"));
-                item.put("deepMode", analysis.get("mode"));
-                item.put("deepModel", analysis.get("model"));
-                item.put("refinedScore", analysis.getOrDefault("refinedScore", raw.get(i).getOrDefault("score", 0)));
-                item.put("refinedRating", analysis.getOrDefault("refinedRating", raw.get(i).getOrDefault("rating", "观察")));
-                item.put("confidence", analysis.getOrDefault("confidence", ""));
-                // ★ 建议持有时间合并到 row(避免前端再调一次 advice 接口,防止中文URL/超时导致空列)
-                item.put("advice", analysis.getOrDefault("advice", buildRuleAdviceOnly(scene, raw.get(i))));
-                result.add(item);
+                a = futures.get(i).get(12, TimeUnit.SECONDS);
             } catch (Exception e) {
-                Map<String, Object> item = new LinkedHashMap<>(raw.get(i));
-                item.put("deepAnalysis", "⚠️ 分析超时或失败: " + e.getMessage());
-                item.put("deepMode", "error");
-                item.put("refinedScore", raw.get(i).getOrDefault("score", 0));
-                item.put("refinedRating", raw.get(i).getOrDefault("rating", "观察"));
-                item.put("advice", buildRuleAdviceOnly(scene, raw.get(i)));
-                result.add(item);
+                a = Map.of("analysis", "⚠️ 分析超时或失败", "mode", "error",
+                        "refinedScore", raw.get(i).getOrDefault("score", 0),
+                        "refinedRating", raw.get(i).getOrDefault("rating", "观察"),
+                        "advice", buildRuleAdviceOnly(scene, raw.get(i)));
             }
+            Map<String, Object> m = new LinkedHashMap<>(raw.get(i));
+            m.put("deepAnalysis", a.get("analysis"));
+            m.put("deepMode", a.get("mode"));
+            m.put("deepModel", a.get("model"));
+            m.put("refinedScore", a.getOrDefault("refinedScore", raw.get(i).getOrDefault("score", 0)));
+            m.put("refinedRating", a.getOrDefault("refinedRating", raw.get(i).getOrDefault("rating", "观察")));
+            m.put("confidence", a.getOrDefault("confidence", ""));
+            m.put("advice", a.getOrDefault("advice", buildRuleAdviceOnly(scene, raw.get(i))));
+            result.add(m);
         }
-
+        warmScenes.add(scene);
         result.sort((a, b) -> Integer.compare(toInt(b.get("refinedScore")), toInt(a.get("refinedScore"))));
         for (int i = 0; i < result.size(); i++) result.get(i).put("refinedRank", i + 1);
         return result;
@@ -145,6 +259,16 @@ public class DeepAnalysisService {
     }
 
     private Map<String, Object> doAnalyze(String scene, Map<String, Object> data) {
+        return doAnalyze(scene, data, false);
+    }
+
+    /**
+     * 单只 AI 分析。
+     * lite=true:列表/预热专用,只要求模型输出「精排评分+建议持有时间」两个 JSON(不生成 5 段长文),
+     *   响应极短,单只 5-10s,30 只并发预热可在 30s 内完成(否则全量长文单只 40s,预热要 1-2 分钟)。
+     * lite=false:详细分析专用,生成完整 5 段长文+两个 JSON(点「详细分析/强制刷新」时按需调用,结果缓存)。
+     */
+    private Map<String, Object> doAnalyze(String scene, Map<String, Object> data, boolean lite) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("name", data.get("name"));
         result.put("code", data.get("code"));
@@ -158,11 +282,12 @@ public class DeepAnalysisService {
             return result;
         }
         try {
-            String prompt = buildPrompt(scene, data);
+            String prompt = lite ? buildLitePrompt(scene, data) : buildPrompt(scene, data);
             String reply = llm.chat(active, prompt);
             result.put("mode", "real");
             result.put("model", active.get("name") + " / " + active.get("model"));
-            result.put("analysis", cleanAnalysis(reply));
+            result.put("analysis", lite ? "" : cleanAnalysis(reply));
+            result.put("lite", lite);
             extractScore(reply, result, data);
             extractAdvice(reply, result, scene, data);
         } catch (Exception e) {
@@ -232,6 +357,27 @@ public class DeepAnalysisService {
 
     private String buildPrompt(String scene, Map<String, Object> d) {
         return "stock".equals(scene) ? buildStockPrompt(d) : buildFundPrompt(d);
+    }
+
+    /** 列表/预热专用精简 prompt:只要求输出两个 JSON,不生成 5 段长文,响应极短、速度快 */
+    private String buildLitePrompt(String scene, Map<String, Object> d) {
+        String codeName = str(d.get("code")) + "(" + str(d.get("name")) + ")";
+        String metrics = "stock".equals(scene)
+                ? String.format("价格:%s PE-TTM:%s ROE:%s%% 毛利率:%s%% 安全边际:%s%% 护城河:%s 系统评分:%s·%s 行业:%s",
+                    str(d.get("price")), str(d.get("pe")), str(d.get("roe")), str(d.get("grossMargin")),
+                    str(d.get("safetyMargin")), str(d.get("moatScore")), str(d.get("score")), str(d.get("rating")), str(d.get("industry")))
+                : String.format("类型:%s 近1年:%s%% 近3年:%s%% 费率:%s 规模:%s 系统评分:%s·%s",
+                    str(d.get("category")), str(d.get("return1y")), str(d.get("return3y")), str(d.get("fee")), str(d.get("scale")), str(d.get("score")), str(d.get("rating")));
+        return """
+        身份:资深价值投资者。标的:%s
+        已有定量数据:%s
+        请严格只输出以下两个 JSON 块,不要输出任何分析正文:
+        1. 精排评分: {"refinedScore":85,"refinedRating":"强烈推荐","confidence":"高"}
+           评分=排雷(0-25)+护城河(0-25)+估值性价比(0-20)+涨跌比(0-20)+实操适合度(0-10)满分100;
+           refinedRating:强烈推荐(≥80) 推荐(60-79) 观察(40-59) 回避(<40)
+        2. 建议持有时间: {"short":{"horizon":"3-6个月","returnRange":"+5%~+15%","logic":"一句话理由"},"mid":{"horizon":"1-2年","returnRange":"+10%~+25%","logic":"一句话理由"},"long":{"horizon":"3年以上","returnRange":"+20%~+40%","logic":"一句话理由"}}
+        收益区间必须保守、给区间,不得与上方已知数据矛盾。
+        """.formatted(codeName, metrics);
     }
 
     /**
